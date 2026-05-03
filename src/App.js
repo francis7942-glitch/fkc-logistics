@@ -642,7 +642,37 @@ function Clients(){
 function Billing({clients}){
   const [form,setForm]=useState({clientId:'',from:'',to:''});
   const [result,setResult]=useState(null);const [loading,setLoading]=useState(false);
+  const [qboLoading,setQboLoading]=useState(false);
+  const [qboResult,setQboResult]=useState(null);
+  const [qboError,setQboError]=useState('');
   const s=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const pushToQBO=async()=>{
+    if(!result) return;
+    setQboLoading(true); setQboError(''); setQboResult(null);
+    try{
+      const client=clients.find(c=>c.id===result.clientId);
+      const res=await fetch('/.netlify/functions/qbo-create-invoice',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          clientName:client?.name||result.clientId,
+          dateFrom:result.dateFrom,
+          dateTo:result.dateTo,
+          hIn:result.hIn,
+          hOut:result.hOut,
+          storage:result.storage,
+          dryTotal:result.dryBilling?.total||0,
+          dryRows:result.dryBilling?.rows||[],
+          total:result.total,
+          rates:result.rates,
+        }),
+      });
+      const data=await res.json();
+      if(data.success){ setQboResult(data); }
+      else setQboError(data.error||'Failed to create invoice in QuickBooks.');
+    }catch(e){ setQboError('Connection error: '+e.message); }
+    setQboLoading(false);
+  };
   const generate=async()=>{
     if(!form.clientId||!form.from||!form.to) return alert('Please fill in all fields.');
     if(form.from>form.to) return alert('Date From must be before Date To.');
@@ -658,7 +688,14 @@ function Billing({clients}){
         <div className="fg"><label>Date From *</label><input type="date" value={form.from} onChange={e=>s('from',e.target.value)}/></div>
         <div className="fg"><label>Date To *</label><input type="date" value={form.to} onChange={e=>s('to',e.target.value)}/></div>
       </div>
-      <button className="btn bac" onClick={generate} disabled={loading}>📄 {loading?'Computing…':'Generate Billing'}</button>
+      <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'center'}}>
+        <button className="btn bac" onClick={generate} disabled={loading}>📄 {loading?'Computing…':'Generate Billing'}</button>
+        {result&&<button className="btn" style={{background:'#2CA01C',color:'#fff'}} onClick={pushToQBO} disabled={qboLoading}>
+          {qboLoading?'⏳ Sending…':'📤 Push to QuickBooks'}
+        </button>}
+        {qboResult&&<span style={{fontSize:13,color:'var(--ac)'}}>✓ Invoice <strong>{qboResult.invoiceNumber}</strong> created in QBO — <a href={qboResult.url} target="_blank" rel="noreferrer" style={{color:'var(--ac)'}}>View in QBO →</a></span>}
+        {qboError&&<span style={{fontSize:13,color:'var(--rd)'}}>✗ {qboError}</span>}
+      </div>
       {result&&(
         <div style={{background:'var(--sur)',border:'1px solid var(--bd)',borderRadius:'var(--rl)',marginTop:28,overflow:'hidden'}}>
           <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',padding:'20px 24px',borderBottom:'1px solid var(--bd)',gap:16}}>
@@ -1191,6 +1228,7 @@ function AppSettings({currentUser}){
         <button className={`tab ${tab==='rates'?'on':''}`} onClick={()=>setTab('rates')}>Rates</button>
         <button className={`tab ${tab==='locations'?'on':''}`} onClick={()=>setTab('locations')}>Locations</button>
         <button className={`tab ${tab==='users'?'on':''}`} onClick={()=>setTab('users')}>Users</button>
+        <button className={`tab ${tab==='qbo'?'on':''}`} onClick={()=>setTab('qbo')}>QuickBooks</button>
       </div>
       {tab==='rates'&&(rates?<div className="sbox">
         <p className="hint">These rates apply globally to all cold/chilled billing computations.</p>
@@ -1218,6 +1256,23 @@ function AppSettings({currentUser}){
             <td><div style={{display:'flex',gap:4,justifyContent:'flex-end'}}><button className="ib" onClick={()=>{setLF({...l});setModal('el');}}>✏️</button><button className="ib dl" onClick={()=>delL(l)}>🗑</button></div></td></tr>
           ))}</tbody>
         </table></div>
+      </div>}
+      {tab==='qbo'&&<div className="sbox">
+        <p className="hint">Connect FKC Logistics to QuickBooks Online to push invoices directly from the Billing page.</p>
+        <div style={{background:'var(--sur2)',border:'1px solid var(--bd)',borderRadius:'var(--rl)',padding:'20px 24px',marginBottom:20}}>
+          <div style={{display:'flex',alignItems:'center',gap:16,flexWrap:'wrap'}}>
+            <div style={{width:44,height:44,background:'#2CA01C',borderRadius:10,display:'flex',alignItems:'center',justifyContent:'center',fontSize:22,flexShrink:0}}>📊</div>
+            <div><div style={{fontFamily:'Syne',fontWeight:700,fontSize:15}}>QuickBooks Online</div><div style={{fontSize:13,color:'var(--tx2)',marginTop:2}}>Push billing invoices directly to your QBO account</div></div>
+            <a href="/.netlify/functions/qbo-auth" className="btn bac mla" style={{background:'#2CA01C',textDecoration:'none'}}>🔗 Connect QuickBooks</a>
+          </div>
+        </div>
+        <div className="info-box">
+          <strong>How it works:</strong><br/>
+          1. Click Connect QuickBooks and authorize FKC Logistics<br/>
+          2. Go to Billing → generate a billing statement<br/>
+          3. Click "Push to QuickBooks" — the invoice is created instantly in QBO<br/>
+          4. FKC clients are automatically matched or created as QBO customers
+        </div>
       </div>}
       {tab==='users'&&<div className="sbox">
         {(modal==='nu'||modal==='eu')&&<Modal title={modal==='nu'?'New User':'Edit User'} onClose={()=>setModal(null)}>
