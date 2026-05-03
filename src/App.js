@@ -1,9 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import * as db from "./db";
-const _fl = document.createElement("link");
-_fl.rel = "stylesheet";
-_fl.href = "https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=JetBrains+M
-document.head.appendChild(_fl);
+
 const _st = document.createElement("style");
 _st.textContent = `
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
