@@ -27,6 +27,7 @@ exports.handler = async (event) => {
     return { statusCode: 302, headers: { Location: '/?qbo=connected' }, body: '' };
   } catch (err) {
     console.error('QBO callback error:', err);
-    return { statusCode: 302, headers: { Location: '/?qbo=error' }, body: '' };
+    return { statusCode: 302, headers: { Location: '/' }, body: '' };
+
   }
 };
