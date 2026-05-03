@@ -1269,24 +1269,7 @@ function AppSettings({currentUser}){
           3. Click "Push to QuickBooks" — the invoice is created instantly in QBO<br/>
           4. FKC clients are automatically matched or created as QBO customers
         </div>
-      </div>}
-      {tab==='qbo'&&<div className="sbox">
-        <p className="hint">Connect FKC Logistics to QuickBooks Online to push invoices directly from the Billing page.</p>
-        <div style={{background:'var(--sur2)',border:'1px solid var(--bd)',borderRadius:'var(--rl)',padding:'20px 24px',marginBottom:20}}>
-          <div style={{display:'flex',alignItems:'center',gap:16,flexWrap:'wrap'}}>
-            <div style={{width:44,height:44,background:'#2CA01C',borderRadius:10,display:'flex',alignItems:'center',justifyContent:'center',fontSize:22,flexShrink:0}}>📊</div>
-            <div><div style={{fontFamily:'Syne',fontWeight:700,fontSize:15}}>QuickBooks Online</div><div style={{fontSize:13,color:'var(--tx2)',marginTop:2}}>Push billing invoices directly to your QBO account</div></div>
-            <a href="/.netlify/functions/qbo-auth" className="btn bac mla" style={{background:'#2CA01C',textDecoration:'none',color:'#fff',padding:'9px 18px',borderRadius:'var(--r)',fontWeight:700,fontSize:13}}>🔗 Connect QuickBooks</a>
-          </div>
-        </div>
-        <div className="info-box">
-          <strong>How it works:</strong><br/>
-          1. Tap Connect QuickBooks and authorize FKC Logistics in your QBO account<br/>
-          2. Go to Billing and generate a billing statement for any client<br/>
-          3. Tap the green Push to QuickBooks button<br/>
-          4. Invoice appears instantly in your QBO — line items for storage, handling, and dry storage
-        </div>
-      </div>}
+      </
       {tab==='users'&&<div className="sbox">
         {(modal==='nu'||modal==='eu')&&<Modal title={modal==='nu'?'New User':'Edit User'} onClose={()=>setModal(null)}>
           <div className="fgrid">
