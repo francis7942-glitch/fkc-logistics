@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Legal — FKC Logistics</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=Mulish:wght@400;500;600&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0d1117; --sur: #161b22; --bd: #30363d;
+      --tx: #e6edf3; --tx2: #8b949e; --ac: #00d4aa;
+    }
+    body { font-family: 'Mulish', sans-serif; background: var(--bg); color: var(--tx); line-height: 1.7; }
+
+```
+header {
+  background: var(--sur); border-bottom: 1px solid var(--bd);
+  padding: 18px 40px; display: flex; align-items: center; gap: 12px;
+  position: sticky; top: 0; z-index: 10;
+}
+.logo {
+  width: 38px; height: 38px; background: #fff; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 3px;
+}
+.logo img { width: 100%; height: 100%; object-fit: contain; }
+.brand { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 18px; }
+.back {
+  margin-left: auto; color: var(--ac); text-decoration: none;
+  font-size: 13px; font-weight: 700;
+}
+
+nav {
+  background: var(--sur); border-bottom: 1px solid var(--bd);
+  padding: 0 40px; display: flex; gap: 0;
+}
+nav a {
+  padding: 14px 20px; color: var(--tx2); text-decoration: none;
+  font-size: 13px; font-weight: 700; border-bottom: 2px solid transparent;
+  transition: all .15s;
+}
+nav a.active, nav a:hover { color: var(--ac); border-bottom-color: var(--ac); }
+
+.container { max-width: 780px; margin: 0 auto; padding: 48px 24px 80px; }
+
+.page { display: none; }
+.page.active { display: block; }
+
+h1 {
+  font-family: 'Syne', sans-serif; font-size: 28px; font-weight: 800;
+  margin-bottom: 6px;
+}
+.date { font-size: 13px; color: var(--tx2); margin-bottom: 36px; }
+h2 {
+  font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 700;
+  color: var(--ac); margin: 32px 0 10px; letter-spacing: .03em;
+  text-transform: uppercase; font-size: 12px;
+}
+p { color: var(--tx2); font-size: 14.5px; margin-bottom: 14px; }
+ul { margin: 8px 0 14px 20px; }
+li { color: var(--tx2); font-size: 14.5px; margin-bottom: 6px; }
+strong { color: var(--tx); }
+.divider { border: none; border-top: 1px solid var(--bd); margin: 32px 0; }
+.contact-box {
+  background: var(--sur); border: 1px solid var(--bd); border-radius: 12px;
+  padding: 20px 24px; margin-top: 32px;
+}
+.contact-box p { margin: 0; }
+.contact-box a { color: var(--ac); }
+
+@media (max-width: 600px) {
+  header, nav { padding-left: 18px; padding-right: 18px; }
+  .container { padding: 32px 18px 60px; }
+  h1 { font-size: 22px; }
+}
+```
+
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+      <path d="M 15,100 A 85,85 0 1,1 185,100" fill="none" stroke="black" stroke-width="8" stroke-linecap="round"/>
+      <text x="100" y="105" font-family="Arial,sans-serif" font-weight="900" font-size="72" text-anchor="middle" dominant-baseline="middle" fill="black">FKC</text>
+      <path id="arc" d="M 22,115 A 85,85 0 0,0 178,115" fill="none"/>
+      <text font-family="Arial,sans-serif" font-weight="700" font-size="18" fill="black" letter-spacing="4">
+        <textPath href="#arc" startOffset="50%" text-anchor="middle">LOGISTICS</textPath>
+      </text>
+    </svg>
+  </div>
+  <span class="brand">FKC Logistics</span>
+  <a href="https://fkclogistics.netlify.app" class="back">← Back to App</a>
+</header>
+
+<nav>
+  <a href="#" class="active" onclick="show('privacy',this)">Privacy Policy</a>
+  <a href="#" onclick="show('terms',this)">Terms of Service</a>
+</nav>
+
+<div class="container">
+
+  <!-- PRIVACY POLICY -->
+
+  <div id="privacy" class="page active">
+    <h1>Privacy Policy</h1>
+    <p class="date">Effective Date: May 3, 2026 · Last Updated: May 3, 2026</p>
+
+```
+<p>FKC Logistics ("we", "our", or "us") is operated by <strong>FNC Nathaniel's Food Corporation</strong>, a company based in City of San Fernando, Pampanga, Philippines. This Privacy Policy explains how we collect, use, and protect information when you use the FKC Logistics cold storage management application.</p>
+
+<h2>1. Information We Collect</h2>
+<p>We collect the following types of information:</p>
+<ul>
+  <li><strong>Account information:</strong> Name, username, and role when creating user accounts within the application.</li>
+  <li><strong>Business data:</strong> Client information, inventory records, transaction logs, billing data, and spare parts information entered by authorized users.</li>
+  <li><strong>QuickBooks integration data:</strong> OAuth tokens used to connect to your QuickBooks Online account. We store these securely in our database to enable invoice creation on your behalf.</li>
+  <li><strong>Usage data:</strong> Basic application usage patterns to improve performance and functionality.</li>
+</ul>
+
+<h2>2. How We Use Your Information</h2>
+<p>We use the collected information solely to:</p>
+<ul>
+  <li>Provide cold storage management services including inventory tracking, billing, and transaction logging</li>
+  <li>Create invoices in your connected QuickBooks Online account when you request it</li>
+  <li>Authenticate users and maintain session security</li>
+  <li>Improve and maintain the application</li>
+</ul>
+
+<h2>3. Data Storage</h2>
+<p>All data is stored securely using <strong>Supabase</strong> (PostgreSQL), hosted in Singapore (Southeast Asia region). Data is encrypted at rest and in transit using industry-standard TLS encryption.</p>
+
+<h2>4. QuickBooks Integration</h2>
+<p>When you connect your QuickBooks Online account, we store OAuth access and refresh tokens in our secure database. These tokens are used exclusively to create invoices on your behalf. We do not access, read, or modify any other QuickBooks data beyond what is required to create invoices. You can revoke access at any time from your QuickBooks account settings.</p>
+
+<h2>5. Data Sharing</h2>
+<p>We do <strong>not</strong> sell, rent, or share your personal or business data with third parties, except:</p>
+<ul>
+  <li>Supabase (our database provider) — for data storage only</li>
+  <li>Intuit QuickBooks — only when you explicitly request invoice creation</li>
+  <li>Netlify — for application hosting</li>
+</ul>
+
+<h2>6. Data Retention</h2>
+<p>We retain your data for as long as your account is active or as needed to provide services. You may request deletion of your data at any time by contacting us.</p>
+
+<h2>7. Security</h2>
+<p>We implement appropriate technical and organizational measures to protect your information, including encrypted storage, secure HTTPS connections, and role-based access controls within the application.</p>
+
+<h2>8. Your Rights</h2>
+<p>You have the right to access, correct, or delete your personal data stored in FKC Logistics. To exercise these rights, contact us using the information below.</p>
+
+<h2>9. Changes to This Policy</h2>
+<p>We may update this Privacy Policy from time to time. We will notify users of significant changes by updating the effective date at the top of this page.</p>
+
+<h2>10. Contact Us</h2>
+<div class="contact-box">
+  <p><strong>FNC Nathaniel's Food Corporation</strong><br/>
+  City of San Fernando, Pampanga, Philippines<br/>
+  Application: <a href="https://fkclogistics.netlify.app">fkclogistics.netlify.app</a><br/>
+  Email: <a href="mailto:francisnathanielco@fncnathaniel.com">francisnathanielco@fncnathaniel.com</a></p>
+</div>
+```
+
+  </div>
+
+  <!-- TERMS OF SERVICE -->
+
+  <div id="terms" class="page">
+    <h1>Terms of Service</h1>
+    <p class="date">Effective Date: May 3, 2026 · Last Updated: May 3, 2026</p>
+
+```
+<p>These Terms of Service ("Terms") govern your use of FKC Logistics, a cold storage management application operated by <strong>FNC Nathaniel's Food Corporation</strong>. By accessing or using the application, you agree to these Terms.</p>
+
+<h2>1. Acceptance of Terms</h2>
+<p>By using FKC Logistics, you confirm that you are an authorized employee or representative of FNC Nathaniel's Food Corporation or an authorized client, and that you agree to comply with these Terms.</p>
+
+<h2>2. Use of the Application</h2>
+<p>FKC Logistics is intended for internal business use to manage cold storage operations including:</p>
+<ul>
+  <li>Inventory management (stock in/out)</li>
+  <li>Client and item management</li>
+  <li>Billing statement generation</li>
+  <li>Dry storage contract management</li>
+  <li>Spare parts monitoring</li>
+  <li>QuickBooks Online invoice creation</li>
+</ul>
+
+<h2>3. User Accounts</h2>
+<p>You are responsible for maintaining the confidentiality of your login credentials. You agree to notify us immediately of any unauthorized use of your account. We reserve the right to deactivate accounts that violate these Terms.</p>
+
+<h2>4. Authorized Use Only</h2>
+<p>You agree to use FKC Logistics only for legitimate business purposes. You must not:</p>
+<ul>
+  <li>Share account credentials with unauthorized persons</li>
+  <li>Attempt to access data belonging to other users or organizations</li>
+  <li>Use the application to store false or misleading business records</li>
+  <li>Attempt to reverse engineer or compromise the application's security</li>
+</ul>
+
+<h2>5. QuickBooks Integration</h2>
+<p>When you use the QuickBooks integration feature, you authorize FKC Logistics to create invoices in your connected QuickBooks Online account on your behalf. You are responsible for ensuring the accuracy of billing data before pushing invoices to QuickBooks.</p>
+
+<h2>6. Data Accuracy</h2>
+<p>You are responsible for the accuracy of all data entered into FKC Logistics, including inventory records, client information, and billing data. FNC Nathaniel's Food Corporation is not liable for errors resulting from inaccurate data entry.</p>
+
+<h2>7. Service Availability</h2>
+<p>We strive to maintain high availability of FKC Logistics but do not guarantee uninterrupted access. The application may be temporarily unavailable due to maintenance, updates, or circumstances beyond our control.</p>
+
+<h2>8. Limitation of Liability</h2>
+<p>To the maximum extent permitted by applicable law, FNC Nathaniel's Food Corporation shall not be liable for any indirect, incidental, or consequential damages arising from your use of FKC Logistics.</p>
+
+<h2>9. Changes to Terms</h2>
+<p>We reserve the right to modify these Terms at any time. Continued use of the application after changes constitutes acceptance of the new Terms.</p>
+
+<h2>10. Governing Law</h2>
+<p>These Terms are governed by the laws of the Republic of the Philippines. Any disputes shall be resolved in the courts of Pampanga, Philippines.</p>
+
+<h2>11. Contact Us</h2>
+<div class="contact-box">
+  <p><strong>FNC Nathaniel's Food Corporation</strong><br/>
+  City of San Fernando, Pampanga, Philippines<br/>
+  Application: <a href="https://fkclogistics.netlify.app">fkclogistics.netlify.app</a><br/>
+  Email: <a href="mailto:francisnathanielco@fncnathaniel.com">francisnathanielco@fncnathaniel.com</a></p>
+</div>
+```
+
+  </div>
+
+</div>
+
+<script>
+  function show(page, el) {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('nav a').forEach(a => a.classList.remove('active'));
+    document.getElementById(page).classList.add('active');
+    el.classList.add('active');
+    event.preventDefault();
+  }
+</script>
+
+</body>
+</html>
