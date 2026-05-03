@@ -1297,7 +1297,9 @@ function AppSettings({currentUser}){
 
 // ----------------------------------------
 export default function App(){
-  const [user,setUser]=useState(null);const [page,setPage]=useState('dashboard');
+  // Persist login across page reloads (survives QBO OAuth redirect)
+  const [user,setUser]=useState(()=>{ try{ const s=localStorage.getItem('fkc_user'); return s?JSON.parse(s):null; }catch{ return null; }});
+  const [page,setPage]=useState(()=>{ try{ return localStorage.getItem('fkc_page')||'dashboard'; }catch{ return 'dashboard'; }});
   const [sideOpen,setSide]=useState(false);
   const [clients,setClients]=useState([]);const [locations,setLocs]=useState([]);
   const [rk,setRk]=useState(0);
@@ -1311,8 +1313,9 @@ export default function App(){
   useEffect(()=>{reload();},[reload]);
 
   const onSaved=useCallback(()=>{setRk(k=>k+1);reload();},[reload]);
-  const doLogin=async()=>{setLL(true);setLe('');const u=await db.login(lu,lp);setLL(false);if(u){setUser(u);setPage('dashboard');await reload();}else setLe('Invalid username or password.');};
-  const doLogout=()=>{setUser(null);setLu('');setLp('');setLe('');};
+  const doLogin=async()=>{setLL(true);setLe('');const u=await db.login(lu,lp);setLL(false);if(u){setUser(u);setPage('dashboard');try{localStorage.setItem('fkc_user',JSON.stringify(u));localStorage.setItem('fkc_page','dashboard');}catch{}await reload();}else setLe('Invalid username or password.');};
+  const doLogout=()=>{setUser(null);setLu('');setLp('');setLe('');try{localStorage.removeItem('fkc_user');localStorage.removeItem('fkc_page');}catch{}};
+
 
   const ALL_NAV=[
     {section:'Operations'},
@@ -1331,7 +1334,7 @@ export default function App(){
     {id:'settings',    label:'Settings',      icon:'⚙️',roles:['admin']},
   ];
   const nav=user?ALL_NAV.filter(n=>n.section||(n.roles&&n.roles.includes(user.role))):[];
-  const goTo=id=>{setPage(id);setSide(false);if(['clients','items','settings','contracts'].includes(id)) reload();};
+  const goTo=id=>{setPage(id);setSide(false);try{localStorage.setItem('fkc_page',id);}catch{}if(['clients','items','settings','contracts'].includes(id)) reload();};
 
   if(!user) return(
     <div className="lw">
