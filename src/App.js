@@ -608,11 +608,100 @@ function Clients(){
   useEffect(()=>{reload();},[reload]);
   const openNew=()=>{setForm({name:'',contact:'',email:'',address:''});setModal('new');};
   const openEdit=c=>{setForm({...c});setModal('edit');};
-  const save=async()=>{if(!form.name?.trim()) return alert('Name is required.');setSaving(true);await db.saveClient({...form,id:form.id||'CLT'+uid()});await reload();setSaving(false);setModal(null);};
+  const save=async()=>{
+    if(!form.name?.trim()) return alert('Name is required.');
+    setSaving(true);
+    await db.saveClient({...form,id:form.id||'CLT'+uid()});
+    // Sync to QBO automatically
+    try{
+      await fetch('/.netlify/functions/qbo-sync-client',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({clientName:form.name,email:form.email,phone:'',address:form.address}),
+      });
+    }catch(e){console.log('QBO sync skipped:',e.message);}
+    await reload();setSaving(false);setModal(null);
+  };
   const del=async id=>{if(!window.confirm('Delete this client and all their items?')) return;await db.deleteClient(id);await reload();};
+  const [syncing,setSyncing]=useState(false);
+  const [syncModal,setSyncModal]=useState(false);
+  const [syncData,setSyncData]=useState([]);
+  const [syncMsg,setSyncMsg]=useState('');
+  const [selected,setSelected]=useState([]);
+
+  const fetchQBOCustomers=async()=>{
+    setSyncing(true);setSyncMsg('');
+    try{
+      const res=await fetch('/.netlify/functions/qbo-get-customers');
+      const d=await res.json();
+      if(d.success){
+        // Filter out customers already in FKC
+        const existing=new Set(clients.map(c=>c.name.toLowerCase()));
+        const newOnes=d.mapped.filter(c=>!existing.has(c.name.toLowerCase()));
+        setSyncData(d.mapped);
+        setSelected(newOnes.map(c=>c.qbo_id));
+        setSyncModal(true);
+        if(newOnes.length===0) setSyncMsg('All QBO customers are already in FKC Logistics.');
+      } else { setSyncMsg('✗ '+d.error); }
+    }catch(e){setSyncMsg('✗ '+e.message);}
+    setSyncing(false);
+  };
+
+  const doSync=async()=>{
+    const toImport=syncData.filter(c=>selected.includes(c.qbo_id));
+    if(!toImport.length) return;
+    setSyncing(true);
+    for(const c of toImport){
+      await db.saveClient({id:'CLT'+uid(),name:c.name,contact:c.contact,email:c.email,address:c.address});
+    }
+    await reload();setSyncing(false);setSyncModal(false);
+    setSyncMsg(`✓ ${toImport.length} client${toImport.length!==1?'s':''} imported from QuickBooks!`);
+    setTimeout(()=>setSyncMsg(''),4000);
+  };
+
+  const toggleSelect=id=>setSelected(s=>s.includes(id)?s.filter(x=>x!==id):[...s,id]);
+
   return(
     <div className="con">
-      <div className="ph"><div className="phi bl">🏢</div><h2>Clients</h2><button className="btn bac mla" onClick={openNew}>+ Add Client</button></div>
+      {syncModal&&(
+        <div className="ov" onClick={()=>setSyncModal(false)}>
+          <div className="mdl wide" onClick={e=>e.stopPropagation()}>
+            <div className="mhd"><span>Sync from QuickBooks ({syncData.length} customers found)</span><button onClick={()=>setSyncModal(false)}>✕</button></div>
+            <div className="mbd">
+              <p style={{fontSize:13,color:'var(--tx2)',marginBottom:16}}>Select customers to import as FKC clients. Already-existing clients are unchecked by default.</p>
+              <div style={{maxHeight:380,overflowY:'auto',border:'1px solid var(--bd)',borderRadius:'var(--r)'}}>
+                {syncData.map(c=>{
+                  const exists=clients.some(x=>x.name.toLowerCase()===c.name.toLowerCase());
+                  const isSelected=selected.includes(c.qbo_id);
+                  return(
+                    <div key={c.qbo_id} onClick={()=>!exists&&toggleSelect(c.qbo_id)}
+                      style={{display:'flex',alignItems:'center',gap:12,padding:'12px 16px',borderBottom:'1px solid var(--bd)',cursor:exists?'default':'pointer',background:isSelected?'var(--acd)':'',opacity:exists?0.5:1}}>
+                      <input type="checkbox" checked={isSelected} disabled={exists} onChange={()=>toggleSelect(c.qbo_id)} style={{width:16,height:16,accentColor:'var(--ac)'}}/>
+                      <div style={{flex:1}}>
+                        <div style={{fontWeight:700,fontSize:13}}>{c.name}</div>
+                        <div style={{fontSize:11,color:'var(--tx2)'}}>{[c.email,c.phone,c.address].filter(Boolean).join(' · ')||'No contact info'}</div>
+                      </div>
+                      {exists&&<span className="bdg b-on" style={{fontSize:10}}>Already in FKC</span>}
+                      {c.balance>0&&<span style={{fontFamily:'JetBrains Mono',fontSize:11,color:'var(--or)'}}>Balance: ₱{c.balance.toLocaleString()}</span>}
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{marginTop:12,fontSize:13,color:'var(--tx2)'}}>{selected.length} of {syncData.filter(c=>!clients.some(x=>x.name.toLowerCase()===c.name.toLowerCase())).length} new customers selected</div>
+              <div className="mft">
+                <button className="btn bgh" onClick={()=>setSyncModal(false)}>Cancel</button>
+                <button className="btn bac" onClick={doSync} disabled={!selected.length||syncing}>{syncing?'Importing…':`Import ${selected.length} Client${selected.length!==1?'s':''}`}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      <div className="ph"><div className="phi bl">🏢</div><h2>Clients</h2>
+        <div style={{display:'flex',gap:8,marginLeft:'auto',flexWrap:'wrap'}}>
+          {syncMsg&&<span style={{fontSize:13,color:syncMsg.startsWith('✓')?'var(--ac)':'var(--rd)',alignSelf:'center'}}>{syncMsg}</span>}
+          <button className="btn bgh" onClick={fetchQBOCustomers} disabled={syncing}>{syncing?'⏳ Fetching…':'🔄 Sync from QBO'}</button>
+          <button className="btn bac" onClick={openNew}>+ Add Client</button>
+        </div>
+      </div>
       {modal&&(<Modal title={modal==='new'?'New Client':'Edit Client'} onClose={()=>setModal(null)}>
         <div className="fgrid">
           <div className="fg s2"><label>Company / Name *</label><input value={form.name||''} onChange={e=>s('name',e.target.value)}/></div>
@@ -676,6 +765,22 @@ function Billing({clients}){
   };
   const client=clients.find(c=>c.id===result?.clientId);
   const allTxs=result?[...result.inTxsInPeriod,...result.outTxs].sort((a,b)=>a.date.localeCompare(b.date)):[];
+  const [qboInvoices,setQboInvoices]=useState([]);
+  const [loadingInvoices,setLoadingInvoices]=useState(false);
+  const [showInvoices,setShowInvoices]=useState(false);
+  const fetchInvoices=async()=>{
+    setLoadingInvoices(true);setShowInvoices(true);
+    try{
+      const res=await fetch('/.netlify/functions/qbo-get-invoices');
+      const d=await res.json();
+      if(d.success){
+        const clientName=clients.find(c=>c.id===form.clientId)?.name||'';
+        const filtered=clientName?d.invoices.filter(i=>i.customer_name.toLowerCase().includes(clientName.toLowerCase())):d.invoices;
+        setQboInvoices(filtered);
+      }
+    }catch(e){console.error(e);}
+    setLoadingInvoices(false);
+  };
   return(
     <div className="con">
       <div className="ph"><div className="phi pu">📄</div><h2>Billing Statement</h2></div>
@@ -689,9 +794,31 @@ function Billing({clients}){
         {result&&<button className="btn" style={{background:'#2CA01C',color:'#fff',border:'none'}} onClick={pushToQBO} disabled={qboLoading}>
           {qboLoading?'⏳ Sending to QBO…':'📤 Push to QuickBooks'}
         </button>}
+        {form.clientId&&<button className="btn bgh" onClick={fetchInvoices} disabled={loadingInvoices}>{loadingInvoices?'⏳ Loading…':'📋 View QBO Invoices'}</button>}
         {qboResult&&<span style={{fontSize:13,color:'var(--ac)'}}>✓ Invoice <strong>{qboResult.invoiceNumber}</strong> created — <a href={qboResult.url} target="_blank" rel="noreferrer" style={{color:'var(--ac)'}}>View in QBO →</a></span>}
         {qboError&&<span style={{fontSize:13,color:'var(--rd)'}}>✗ {qboError}</span>}
       </div>
+      {showInvoices&&<div style={{background:'var(--sur)',border:'1px solid var(--bd)',borderRadius:'var(--rl)',marginTop:16,overflow:'hidden'}}>
+        <div style={{padding:'14px 20px',borderBottom:'1px solid var(--bd)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+          <span style={{fontFamily:'Syne',fontWeight:700,fontSize:14}}>QBO Invoice History — {clients.find(c=>c.id===form.clientId)?.name}</span>
+          <button className="ib" onClick={()=>setShowInvoices(false)}>✕</button>
+        </div>
+        {loadingInvoices?<div style={{padding:24,textAlign:'center',color:'var(--tx3)'}}>Loading invoices…</div>:
+        qboInvoices.length===0?<div style={{padding:24,textAlign:'center',color:'var(--tx3)'}}>No invoices found in QBO for this client.</div>:
+        <div style={{overflow:'auto'}}><table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+          <thead><tr>{['Invoice #','Date','Due Date','Amount','Balance','Status'].map(h=><th key={h} style={{background:'var(--sur2)',padding:'10px 14px',textAlign:'left',fontSize:11,fontWeight:700,color:'var(--tx2)',letterSpacing:'.06em',textTransform:'uppercase',borderBottom:'1px solid var(--bd)',whiteSpace:'nowrap'}}>{h}</th>)}</tr></thead>
+          <tbody>{qboInvoices.map(inv=>(
+            <tr key={inv.id} style={{borderBottom:'1px solid var(--bd)'}}>
+              <td style={{padding:'10px 14px',fontFamily:'JetBrains Mono',fontSize:12}}>{inv.doc_number}</td>
+              <td style={{padding:'10px 14px',color:'var(--tx2)',fontSize:12}}>{fmtD(inv.date)}</td>
+              <td style={{padding:'10px 14px',color:'var(--tx2)',fontSize:12}}>{fmtD(inv.due_date)}</td>
+              <td style={{padding:'10px 14px',fontFamily:'JetBrains Mono',fontSize:12}}>{fmtM(inv.amount)}</td>
+              <td style={{padding:'10px 14px',fontFamily:'JetBrains Mono',fontSize:12,color:inv.balance>0?'var(--or)':'var(--ac)'}}>{fmtM(inv.balance)}</td>
+              <td style={{padding:'10px 14px'}}><span className={`bdg ${inv.status==='paid'?'b-on':inv.status==='overdue'?'b-out':'b-per'}`}>{inv.status==='paid'?'✓ Paid':inv.status==='overdue'?'⚠ Overdue':'● Open'}</span></td>
+            </tr>
+          ))}</tbody>
+        </table></div>}
+      </div>}
       {result&&(
         <div style={{background:'var(--sur)',border:'1px solid var(--bd)',borderRadius:'var(--rl)',marginTop:28,overflow:'hidden'}}>
           <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',padding:'20px 24px',borderBottom:'1px solid var(--bd)',gap:16}}>
@@ -739,6 +866,24 @@ function Billing({clients}){
           <div style={{padding:'16px 24px',borderTop:'2px solid var(--bd)',display:'flex',justifyContent:'space-between',fontFamily:'Syne',fontWeight:800,fontSize:20,color:'var(--ac)'}}>
             <span>TOTAL DUE</span><span style={{fontFamily:'JetBrains Mono'}}>{fmtM(result.total)}</span>
           </div>
+          {clientInvoices.length>0&&(
+            <div style={{padding:'16px 24px',borderTop:'1px solid var(--bd)',background:'var(--sur2)'}}>
+              <div style={{fontSize:11,fontWeight:700,color:'var(--tx2)',letterSpacing:'.07em',textTransform:'uppercase',marginBottom:10}}>QBO Invoice History — {client?.name}</div>
+              <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                {clientInvoices.slice(0,5).map(inv=>(
+                  <div key={inv.id} style={{display:'flex',alignItems:'center',gap:12,fontSize:13,flexWrap:'wrap'}}>
+                    <span style={{fontFamily:'JetBrains Mono',fontSize:12,color:'var(--tx2)'}}>{inv.doc_number}</span>
+                    <span style={{color:'var(--tx2)',fontSize:12}}>{fmtD(inv.txn_date)}</span>
+                    <span style={{fontFamily:'JetBrains Mono',fontSize:12}}>{fmtM(inv.total)}</span>
+                    <span className={`bdg ${inv.status==='paid'?'b-on':inv.status==='partial'?'b-per':'b-out'}`}>
+                      {inv.status==='paid'?'✓ Paid':inv.status==='partial'?`Partial — ${fmtM(inv.balance)} due`:'Unpaid'}
+                    </span>
+                    {inv.status!=='paid'&&<span style={{fontFamily:'JetBrains Mono',fontSize:11,color:'var(--rd)'}}>Balance: {fmtM(inv.balance)}</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -1195,6 +1340,47 @@ function SpareParts({user}){
 
 // ----------------------------------------
 
+
+function QBOServices(){
+  const [services,setServices]=useState([]);
+  const [loading,setLoading]=useState(false);
+  const [show,setShow]=useState(false);
+
+  const fetch_=async()=>{
+    setLoading(true);setShow(true);
+    try{
+      const res=await fetch('/.netlify/functions/qbo-get-services');
+      const d=await res.json();
+      if(d.success) setServices(d.items);
+    }catch(e){console.error(e);}
+    setLoading(false);
+  };
+
+  return(
+    <div style={{marginTop:16}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
+        <div style={{fontFamily:'Syne',fontWeight:700,fontSize:13}}>QBO Products & Services</div>
+        <button className="btn bgh" style={{fontSize:12}} onClick={fetch_} disabled={loading}>{loading?'Loading…':'📦 Load from QBO'}</button>
+      </div>
+      {show&&<div style={{background:'var(--sur2)',border:'1px solid var(--bd)',borderRadius:'var(--r)',overflow:'hidden'}}>
+        {loading?<div style={{padding:16,textAlign:'center',color:'var(--tx3)',fontSize:13}}>Loading…</div>:
+        services.length===0?<div style={{padding:16,textAlign:'center',color:'var(--tx3)',fontSize:13}}>No services found.</div>:
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+          <thead><tr>{['Name','Description','Rate','Type'].map(h=><th key={h} style={{background:'var(--sur3)',padding:'8px 12px',textAlign:'left',fontSize:10,fontWeight:700,color:'var(--tx2)',letterSpacing:'.06em',textTransform:'uppercase',borderBottom:'1px solid var(--bd)'}}>{h}</th>)}</tr></thead>
+          <tbody>{services.map(s=>(
+            <tr key={s.id} style={{borderBottom:'1px solid var(--bd)'}}>
+              <td style={{padding:'9px 12px',fontWeight:600}}>{s.name}</td>
+              <td style={{padding:'9px 12px',color:'var(--tx2)',fontSize:12}}>{s.description||'—'}</td>
+              <td style={{padding:'9px 12px',fontFamily:'JetBrains Mono',fontSize:12}}>{s.unit_price>0?fmtM(s.unit_price):'—'}</td>
+              <td style={{padding:'9px 12px'}}><span className="bdg b-per">{s.type}</span></td>
+            </tr>
+          ))}</tbody>
+        </table>}
+      </div>}
+    </div>
+  );
+}
+
 function QBOSettings(){
   const [status,setStatus]=useState('idle');
   const [msg,setMsg]=useState('');
@@ -1232,8 +1418,8 @@ function QBOSettings(){
       <div className="info-box">
         <strong>How to use:</strong><br/>
         1. Tap <strong>Refresh Token</strong> to get a fresh QBO connection (lasts 1 hour)<br/>
-        2. Go to Billing and generate a statement<br/>
-        3. Tap the green <strong>Push to QuickBooks</strong> button<br/>
+        2. Go to Billing → generate a statement → tap <strong>Push to QuickBooks</strong><br/>
+        3. Go to <strong>Clients</strong> → tap <strong>Sync from QBO</strong> to import customers<br/>
         4. Use <strong>Reconnect</strong> only if Refresh Token fails after 100 days
       </div>
     </div>
