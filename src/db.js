@@ -539,16 +539,16 @@ export async function computeBilling(clientId, dateFrom, dateTo) {
           kgOnHand += tx.type === 'IN' ? tx.kg : -tx.kg;
         }
       }
-      if (kgOnHand < 0) {
-        // Flag negative stock — data integrity issue
+      if (kgOnHand < -0.01) {
+        // Flag truly negative stock — data integrity issue (ignore floating point noise)
         negativeItems.push({ item_name: itemData.name, kg: kgOnHand });
-      } else if (kgOnHand > 0) {
+      } else if (kgOnHand > 0.001) {
         dayItems.push({ item_name: itemData.name, kg: kgOnHand });
       }
       // Include in total (negative correctly reduces the total)
       dayTotalKg += kgOnHand;
     }
-    dayTotalKg = Math.max(0, dayTotalKg);
+    dayTotalKg = Math.max(0, Math.round(dayTotalKg * 1000) / 1000); // round to 3dp, clamp to 0
 
     // Compute charge per item type using correct rate
     let dayCharge = 0;

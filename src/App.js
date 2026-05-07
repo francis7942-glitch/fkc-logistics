@@ -398,11 +398,11 @@ function InventoryPanel({inventory,clients,locations}){
   const chips=[{k:'all',l:'All Types'},{k:'frozen',l:'🧊 Frozen'},{k:'chilled',l:'🌡️ Chilled'},{k:'dry',l:'📦 Dry'}];
   return(
     <div className="inv-wrap">
-      {inventory.filter(r=>r.kg<0).length>0&&(
+      {inventory.filter(r=>r.kg<-0.01).length>0&&(
         <div style={{background:'var(--rdd)',borderBottom:'1px solid rgba(248,81,73,.25)',padding:'12px 18px',fontSize:13,color:'var(--rd)'}}>
-          ⚠ <strong>{inventory.filter(r=>r.kg<0).length}</strong> item{inventory.filter(r=>r.kg<0).length!==1?'s':''} with negative inventory — Stock Out exceeded Stock In:
+          ⚠ <strong>{inventory.filter(r=>r.kg<-0.01).length}</strong> item{inventory.filter(r=>r.kg<-0.01).length!==1?'s':''} with negative inventory — Stock Out exceeded Stock In:
           <div style={{marginTop:6,fontSize:12,display:'flex',flexWrap:'wrap',gap:8}}>
-            {inventory.filter(r=>r.kg<0).map((r,i)=>(
+            {inventory.filter(r=>r.kg<-0.01).map((r,i)=>(
               <span key={i} style={{background:'rgba(248,81,73,.15)',borderRadius:4,padding:'2px 8px'}}>
                 {r.item_name} ({r.client_name}): <strong>{fmtKg(r.kg)}</strong>
               </span>
@@ -432,12 +432,12 @@ function InventoryPanel({inventory,clients,locations}){
         <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
           <thead><tr>{['Item','Client','Location','Type','On Hand'].map((h,i)=><th key={h} style={{background:'var(--sur2)',padding:'10px 14px',textAlign:i===4?'right':'left',fontSize:11,fontWeight:700,color:'var(--tx2)',letterSpacing:'.06em',textTransform:'uppercase',borderBottom:'1px solid var(--bd)',whiteSpace:'nowrap'}}>{h}</th>)}</tr></thead>
           <tbody>{filtered.map((r,i)=>(
-            <tr key={i} className={`row-${r.storage_type==='frozen'?'frz':r.storage_type==='chilled'?'chl':'dry'}`} style={{borderBottom:'1px solid var(--bd)',background:r.kg<0?'rgba(248,81,73,.05)':''}} onMouseEnter={e=>e.currentTarget.style.background=r.kg<0?'rgba(248,81,73,.1)':'var(--sur2)'} onMouseLeave={e=>e.currentTarget.style.background=r.kg<0?'rgba(248,81,73,.05)':''}>
+            <tr key={i} className={`row-${r.storage_type==='frozen'?'frz':r.storage_type==='chilled'?'chl':'dry'}`} style={{borderBottom:'1px solid var(--bd)',background:r.kg<-0.01?'rgba(248,81,73,.05)':''}} onMouseEnter={e=>e.currentTarget.style.background=r.kg<-0.01?'rgba(248,81,73,.1)':'var(--sur2)'} onMouseLeave={e=>e.currentTarget.style.background=r.kg<-0.01?'rgba(248,81,73,.05)':''}>
               <td style={{padding:'11px 14px'}}><div style={{fontWeight:700}}>{r.item_name}</div>{r.item_code&&<div style={{fontFamily:'JetBrains Mono',fontSize:11,color:'var(--tx2)'}}>{r.item_code}</div>}</td>
               <td style={{padding:'11px 14px',color:'var(--tx2)'}}>{r.client_name}</td>
               <td style={{padding:'11px 14px'}}><span className="bdg b-loc">{r.location_name}</span></td>
               <td style={{padding:'11px 14px'}}><span className={`bdg ${sbadge(r.storage_type)}`}>{sico(r.storage_type)} {r.storage_type}</span></td>
-              <td style={{padding:'11px 14px',textAlign:'right',fontFamily:'JetBrains Mono',fontSize:13,fontWeight:600,color:r.kg<0?'var(--rd)':'var(--ac)'}}>{r.kg<0?<span title="Negative inventory - Stock Out exceeded Stock In">⚠ {fmtKg(r.kg)}</span>:fmtKg(r.kg)}</td>
+              <td style={{padding:'11px 14px',textAlign:'right',fontFamily:'JetBrains Mono',fontSize:13,fontWeight:600,color:r.kg<-0.01?'var(--rd)':'var(--ac)'}}>{r.kg<-0.01?<span title="Negative inventory - Stock Out exceeded Stock In">⚠ {fmtKg(r.kg)}</span>:fmtKg(r.kg)}</td>
             </tr>
           ))}</tbody>
           <tfoot><tr style={{background:'var(--sur2)',borderTop:'2px solid var(--bd)'}}>
