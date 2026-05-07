@@ -543,18 +543,6 @@ function ItemDatabase({clients}){
   const STYPES=["frozen","chilled","dry"];
   const reload=useCallback(async()=>{setLoading(true);setAllItems(await db.getItems());setLoading(false);},[]);
   useEffect(()=>{reload();},[reload]);
-  useEffect(()=>{
-    if(user?.role_id){
-      db.getUserPermissions(user.role_id).then(p=>setUserPerms(p||{}));
-    } else if(user?.role==='admin'){
-      // Legacy admin fallback - give full perms
-      db.getUserPermissions('ROLE_ADMIN').then(p=>setUserPerms(p||{}));
-    } else if(user){
-      db.getUserPermissions('ROLE_PERSONNEL').then(p=>setUserPerms(p||{}));
-    }
-  },[user]);
-  const can=(perm)=>!!(userPerms[perm]||(user?.role==='admin'));
-  const canSee=(mod)=>!!(userPerms[mod]||(user?.role==='admin'));
   const openNew=(cid='')=>{setForm({name:'',code:'',client_id:cid,storage_type:'frozen',notes:''});setModal('new');};
   const openEdit=item=>{setForm({...item});setModal('edit');};
   const save=async()=>{
@@ -783,18 +771,6 @@ function Clients(){
     setLoading(false);
   },[]);
   useEffect(()=>{reload();},[reload]);
-  useEffect(()=>{
-    if(user?.role_id){
-      db.getUserPermissions(user.role_id).then(p=>setUserPerms(p||{}));
-    } else if(user?.role==='admin'){
-      // Legacy admin fallback - give full perms
-      db.getUserPermissions('ROLE_ADMIN').then(p=>setUserPerms(p||{}));
-    } else if(user){
-      db.getUserPermissions('ROLE_PERSONNEL').then(p=>setUserPerms(p||{}));
-    }
-  },[user]);
-  const can=(perm)=>!!(userPerms[perm]||(user?.role==='admin'));
-  const canSee=(mod)=>!!(userPerms[mod]||(user?.role==='admin'));
   const openNew=()=>{setForm({name:'',contact:'',email:'',address:''});setModal('new');};
   const openEdit=c=>{setForm({...c});setModal('edit');};
   const save=async()=>{
@@ -1256,18 +1232,6 @@ function Contracts({clients,locations}){
   const td=today(),curYM=today().slice(0,7);
   const reload=useCallback(async()=>{setLoading(true);setContracts(await db.getContracts());setLoading(false);},[]);
   useEffect(()=>{reload();},[reload]);
-  useEffect(()=>{
-    if(user?.role_id){
-      db.getUserPermissions(user.role_id).then(p=>setUserPerms(p||{}));
-    } else if(user?.role==='admin'){
-      // Legacy admin fallback - give full perms
-      db.getUserPermissions('ROLE_ADMIN').then(p=>setUserPerms(p||{}));
-    } else if(user){
-      db.getUserPermissions('ROLE_PERSONNEL').then(p=>setUserPerms(p||{}));
-    }
-  },[user]);
-  const can=(perm)=>!!(userPerms[perm]||(user?.role==='admin'));
-  const canSee=(mod)=>!!(userPerms[mod]||(user?.role==='admin'));
   const openNew=()=>{setForm(blank);setModal('new');};
   const openEdit=c=>{setForm({...c,periods:(c.periods||[]).map(p=>({...p,start:p.start_date||p.start,end:p.end_date||p.end}))});setModal('edit');};
   const openView=c=>{setForm({...c});setModal('view');};
