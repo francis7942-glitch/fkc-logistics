@@ -121,7 +121,6 @@ export async function saveContract(contract) {
   const id = contractData.id || uid();
   const { error } = await supabase.from('contracts').upsert({ ...contractData, id });
   if (error) throw error;
-  // Replace periods
   await supabase.from('contract_periods').delete().eq('contract_id', id);
   if (periods && periods.length > 0) {
     const rows = periods.map(p => ({
@@ -154,11 +153,8 @@ export async function saveMachine(m) {
 export async function deleteMachine(id) {
   await supabase.from('sp_machines').delete().eq('id', id);
 }
-
 export async function getParts(filter = '') {
-  let q = supabase.from('sp_parts').select('*').order('name');
-  if (filter === 'low') q = q.lte('current_stock', supabase.raw('min_stock'));
-  const { data } = await q;
+  const { data } = await supabase.from('sp_parts').select('*').order('name');
   if (!data) return [];
   if (filter === 'low') return data.filter(p => p.current_stock <= p.min_stock);
   if (filter === 'ok')  return data.filter(p => p.current_stock > p.min_stock);
@@ -171,20 +167,17 @@ export async function savePart(p) {
 export async function deletePart(id) {
   await supabase.from('sp_parts').delete().eq('id', id);
 }
-
 export async function getMovements(partId = '', machineId = '') {
   let q = supabase.from('sp_movements').select('*').order('date', { ascending: false });
-  if (partId)   q = q.eq('part_id', partId);
-  if (machineId)q = q.eq('machine_id', machineId);
+  if (partId)    q = q.eq('part_id', partId);
+  if (machineId) q = q.eq('machine_id', machineId);
   const { data } = await q;
   return data || [];
 }
 export async function saveMovement(mvt) {
-  // 1. Insert movement record
   const id = 'MVT' + uid();
   const { error } = await supabase.from('sp_movements').insert({ ...mvt, id, date: mvt.date || new Date().toISOString() });
   if (error) throw error;
-  // 2. Update stock on the part
   const { data: part } = await supabase.from('sp_parts').select('current_stock').eq('id', mvt.part_id).single();
   if (part) {
     let newStock = part.current_stock;
@@ -194,7 +187,6 @@ export async function saveMovement(mvt) {
     await supabase.from('sp_parts').update({ current_stock: newStock }).eq('id', mvt.part_id);
   }
 }
-
 export async function getPurchaseRequests() {
   const { data } = await supabase.from('sp_purchase_requests').select('*').order('requested_at', { ascending: false });
   return data || [];
@@ -234,12 +226,16 @@ export async function getInventory() {
 // ── MONTHLY REVENUE ───────────────────────────────────────────────
 export async function getMonthlyRevenue(year, clientId = '') {
   const rates = await getRates();
-  let q = supabase.from('transactions').select('type,kg,date,client_id')
+  let q = supabase.from('transactions').select('type,kg,date,client_id,item_id')
     .gte('date', `${year}-01-01`).lte('date', `${year}-12-31`);
   if (clientId) q = q.eq('client_id', clientId);
   const { data: txs } = await q;
+  const { data: items } = await supabase.from('items').select('id,storage_type');
+  const dryIds = new Set((items||[]).filter(i=>i.storage_type==='dry').map(i=>i.id));
+
   const months = Array(12).fill(null).map(() => ({ storage:0, handlingIn:0, handlingOut:0, total:0, kgIn:0, kgOut:0 }));
   for (const tx of (txs||[])) {
+    if (dryIds.has(tx.item_id)) continue;
     const m = parseInt(tx.date.slice(5,7)) - 1;
     if (m < 0 || m > 11) continue;
     if (tx.type === 'IN') {
@@ -255,36 +251,89 @@ export async function getMonthlyRevenue(year, clientId = '') {
   return months;
 }
 
-// ── BILLING ───────────────────────────────────────────────────────
+// ── BILLING — DAILY RUNNING BALANCE METHOD ────────────────────────
 export async function computeBilling(clientId, dateFrom, dateTo) {
   const rates = await getRates();
   const items = await getItems(clientId);
   const dryIds = new Set(items.filter(i => i.storage_type === 'dry').map(i => i.id));
 
+  // Get ALL transactions up to end of billing period (need history for opening balance)
   const { data: allTxs } = await supabase.from('transactions')
-    .select('*').eq('client_id', clientId).lte('date', dateTo);
+    .select('*').eq('client_id', clientId).lte('date', dateTo).order('date');
   const txs = allTxs || [];
+  const coldTxs = txs.filter(t => !dryIds.has(t.item_id));
 
-  const isCold = tx => !dryIds.has(tx.item_id);
-  const allIn  = txs.filter(t => t.type==='IN' && isCold(t));
-  const inP    = txs.filter(t => t.type==='IN'  && isCold(t) && t.date>=dateFrom);
-  const outP   = txs.filter(t => t.type==='OUT' && isCold(t) && t.date>=dateFrom);
+  // Transactions within billing period (for handling fees)
+  const inPeriod  = coldTxs.filter(t => t.date >= dateFrom && t.date <= dateTo);
+  const inTxs     = inPeriod.filter(t => t.type === 'IN');
+  const outTxs    = inPeriod.filter(t => t.type === 'OUT');
 
-  const from = new Date(dateFrom), to = new Date(dateTo); to.setHours(23,59,59,999);
-  const hIn  = inP.reduce((s,t)  => s + t.kg * rates.handling_in_per_kg,  0);
-  const hOut = outP.reduce((s,t) => s + t.kg * rates.handling_out_per_kg, 0);
-  let storage = 0;
-  for (const tx of allIn) {
-    const start = new Date(tx.date) < from ? from : new Date(tx.date);
-    const days  = Math.max(Math.ceil((to - start) / 864e5) + 1, 0);
-    storage += tx.kg * rates.storage_per_kg_per_day * days;
+  // Handling fees (only for transactions within the billing period)
+  const hIn  = inTxs.reduce((s,t)  => s + t.kg * rates.handling_in_per_kg,  0);
+  const hOut = outTxs.reduce((s,t) => s + t.kg * rates.handling_out_per_kg, 0);
+
+  // ── DAILY RUNNING BALANCE STORAGE COMPUTATION ────────────────────
+  // Build a map of all transactions grouped by item
+  const itemMap = {};
+  for (const tx of coldTxs) {
+    if (!itemMap[tx.item_id]) itemMap[tx.item_id] = { name: tx.item_name, txs: [] };
+    itemMap[tx.item_id].txs.push(tx);
   }
-  const coldTotal = hIn + hOut + storage;
 
-  // Dry billing from contracts
+  // For each day in the billing period, compute kg on hand per item
+  const dailyRows = []; // { date, items: [{item_name, kg}], totalKg, charge }
+  let totalStorage = 0;
+
+  // Enumerate each day in the billing period
+  const start = new Date(dateFrom + 'T00:00:00');
+  const end   = new Date(dateTo   + 'T00:00:00');
+
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const dateStr = d.toISOString().slice(0, 10);
+    const dayItems = [];
+    let dayTotalKg = 0;
+
+    for (const [itemId, itemData] of Object.entries(itemMap)) {
+      // Sum all transactions for this item UP TO AND INCLUDING this day
+      let kgOnHand = 0;
+      for (const tx of itemData.txs) {
+        if (tx.date <= dateStr) {
+          kgOnHand += tx.type === 'IN' ? tx.kg : -tx.kg;
+        }
+      }
+      kgOnHand = Math.max(0, kgOnHand); // can't be negative
+      if (kgOnHand > 0) {
+        dayItems.push({ item_name: itemData.name, kg: kgOnHand });
+        dayTotalKg += kgOnHand;
+      }
+    }
+
+    const dayCharge = dayTotalKg * rates.storage_per_kg_per_day;
+    totalStorage += dayCharge;
+
+    dailyRows.push({
+      date: dateStr,
+      items: dayItems,
+      totalKg: dayTotalKg,
+      charge: dayCharge,
+    });
+  }
+
+  const coldTotal = hIn + hOut + totalStorage;
   const dryBilling = await computeDryBillingRange(clientId, dateFrom, dateTo);
 
-  return { clientId, dateFrom, dateTo, inTxsInPeriod:inP, outTxs:outP, hIn, hOut, storage, coldTotal, dryBilling, total: coldTotal + dryBilling.total, rates };
+  return {
+    clientId, dateFrom, dateTo,
+    inTxsInPeriod: inTxs,
+    outTxs,
+    hIn, hOut,
+    storage: totalStorage,
+    dailyRows, // day-by-day breakdown
+    coldTotal,
+    dryBilling,
+    total: coldTotal + dryBilling.total,
+    rates,
+  };
 }
 
 // ── DRY CONTRACT BILLING ──────────────────────────────────────────
