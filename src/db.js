@@ -627,4 +627,3 @@ export async function getSpDashboard() {
   const totalValue = parts.reduce((s,p) => s + p.current_stock * p.unit_cost, 0);
   return { low, warn, ok: parts.filter(p => p.current_stock > p.min_stock), openPRs: openPRs||[], totalValue };
 }
- 
