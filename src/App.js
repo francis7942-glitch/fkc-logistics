@@ -834,12 +834,51 @@ function Billing({clients}){
             ))}</tbody></table>
           </div>
           <div style={{padding:'10px 24px'}}>
-            {[['Handling Fee — Stock In',`(${fmtM(result.rates.handling_in_per_kg)}/kg)`,result.hIn],['Handling Fee — Stock Out',`(${fmtM(result.rates.handling_out_per_kg)}/kg)`,result.hOut],['Storage Fee',`(${fmtM(result.rates.storage_per_kg_per_day)}/kg/day)`,result.storage],['Cold/Chilled Subtotal','',result.coldTotal,true]].map(([l,sub,v,bold])=>(
-              <div key={l} style={{display:'flex',justifyContent:'space-between',padding:'9px 0',borderBottom:'1px solid var(--bd)',fontSize:bold?14:13.5,fontWeight:bold?700:400}}>
-                <span>{l}{sub&&<span style={{color:'var(--tx2)',fontFamily:'JetBrains Mono',fontSize:11}}> {sub}</span>}</span>
+            {[['Handling Fee — Stock In',`(${fmtM(result.rates.handling_in_per_kg)}/kg)`,result.hIn],['Handling Fee — Stock Out',`(${fmtM(result.rates.handling_out_per_kg)}/kg)`,result.hOut]].map(([l,sub,v])=>(
+              <div key={l} style={{display:'flex',justifyContent:'space-between',padding:'9px 0',borderBottom:'1px solid var(--bd)',fontSize:13.5}}>
+                <span>{l}<span style={{color:'var(--tx2)',fontFamily:'JetBrains Mono',fontSize:11}}> {sub}</span></span>
                 <span style={{fontFamily:'JetBrains Mono'}}>{fmtM(v)}</span>
               </div>
             ))}
+            {/* Storage Fee with item breakdown */}
+            <div style={{padding:'9px 0',borderBottom:'1px solid var(--bd)'}}>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:13.5,marginBottom:8}}>
+                <span>Storage Fee <span style={{color:'var(--tx2)',fontFamily:'JetBrains Mono',fontSize:11}}> ({fmtM(result.rates.storage_per_kg_per_day)}/kg/day)</span></span>
+                <span style={{fontFamily:'JetBrains Mono'}}>{fmtM(result.storage)}</span>
+              </div>
+              {/* Detailed breakdown per item */}
+              <div style={{background:'var(--sur2)',borderRadius:'var(--r)',overflow:'hidden',marginTop:4}}>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 80px 80px 80px 100px',gap:0,borderBottom:'1px solid var(--bd)',background:'var(--sur3)'}}>
+                  {['Item','kg','Rate','Days','Amount'].map(h=><div key={h} style={{padding:'6px 10px',fontSize:10,fontWeight:700,color:'var(--tx2)',letterSpacing:'.05em',textTransform:'uppercase'}}>{h}</div>)}
+                </div>
+                {result.inTxsInPeriod.concat(result.outTxs.filter(()=>false)).concat(
+                  // Group all stock-in transactions that contribute to storage
+                  result.inTxsInPeriod
+                ).filter((tx,i,arr)=>arr.findIndex(t=>t.id===tx.id)===i).map(tx=>{
+                  const startDate=new Date(tx.date)<new Date(result.dateFrom)?new Date(result.dateFrom):new Date(tx.date);
+                  const endDate=new Date(result.dateTo);
+                  endDate.setHours(23,59,59,999);
+                  const days=Math.max(Math.ceil((endDate-startDate)/864e5)+1,0);
+                  const amount=tx.kg*result.rates.storage_per_kg_per_day*days;
+                  return(
+                    <div key={tx.id} style={{display:'grid',gridTemplateColumns:'1fr 80px 80px 80px 100px',gap:0,borderBottom:'1px solid var(--bd)'}}>
+                      <div style={{padding:'7px 10px',fontSize:12,fontWeight:600}}>{tx.item_name}</div>
+                      <div style={{padding:'7px 10px',fontSize:12,fontFamily:'JetBrains Mono',color:'var(--tx2)'}}>{tx.kg.toLocaleString()}</div>
+                      <div style={{padding:'7px 10px',fontSize:12,fontFamily:'JetBrains Mono',color:'var(--tx2)'}}>{fmtM(result.rates.storage_per_kg_per_day)}</div>
+                      <div style={{padding:'7px 10px',fontSize:12,fontFamily:'JetBrains Mono',color:'var(--tx2)'}}>{days}d</div>
+                      <div style={{padding:'7px 10px',fontSize:12,fontFamily:'JetBrains Mono',color:'var(--ac)'}}>{fmtM(amount)}</div>
+                    </div>
+                  );
+                })}
+                <div style={{display:'grid',gridTemplateColumns:'1fr 80px 80px 80px 100px',background:'rgba(0,212,170,.06)',borderTop:'1px solid rgba(0,212,170,.2)'}}>
+                  <div style={{padding:'7px 10px',fontSize:12,fontWeight:700,color:'var(--ac)',gridColumn:'span 4'}}>Storage Subtotal</div>
+                  <div style={{padding:'7px 10px',fontSize:12,fontFamily:'JetBrains Mono',fontWeight:700,color:'var(--ac)'}}>{fmtM(result.storage)}</div>
+                </div>
+              </div>
+            </div>
+            <div style={{display:'flex',justifyContent:'space-between',padding:'9px 0',borderBottom:'1px solid var(--bd)',fontSize:14,fontWeight:700}}>
+              <span>Cold/Chilled Subtotal</span><span style={{fontFamily:'JetBrains Mono'}}>{fmtM(result.coldTotal)}</span>
+            </div>
           </div>
           {result.dryBilling?.rows?.length>0&&(
             <div style={{padding:'0 24px 16px'}}>
