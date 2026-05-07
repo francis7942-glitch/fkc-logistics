@@ -765,10 +765,10 @@ function Billing({clients}){
   };
   const client=clients.find(c=>c.id===result?.clientId);
   const allTxs=result?[...result.inTxsInPeriod,...result.outTxs].sort((a,b)=>a.date.localeCompare(b.date)):[];
-  const clientInvoices=qboInvoices.filter(i=>i.customer_name?.toLowerCase()===client?.name?.toLowerCase());
   const [qboInvoices,setQboInvoices]=useState([]);
   const [loadingInvoices,setLoadingInvoices]=useState(false);
   const [showInvoices,setShowInvoices]=useState(false);
+  const clientInvoices=qboInvoices.filter(i=>i.customer_name?.toLowerCase()===client?.name?.toLowerCase());
   const fetchInvoices=async()=>{
     setLoadingInvoices(true);setShowInvoices(true);
     try{
@@ -1515,7 +1515,16 @@ function AppSettings({currentUser}){
 // ----------------------------------------
 export default function App(){
   // Persist login across page reloads (survives QBO OAuth redirect)
-  const [user,setUser]=useState(()=>{ try{ const s=localStorage.getItem('fkc_user'); return s?JSON.parse(s):null; }catch{ return null; }});
+  const [user,setUser]=useState(()=>{
+    try{
+      const s=localStorage.getItem('fkc_user');
+      if(!s) return null;
+      const u=JSON.parse(s);
+      // Validate user object has required fields
+      if(!u||!u.id||!u.name||!u.role) { localStorage.removeItem('fkc_user'); return null; }
+      return u;
+    }catch{ localStorage.removeItem('fkc_user'); return null; }
+  });
   const [page,setPage]=useState(()=>{ try{ return localStorage.getItem('fkc_page')||'dashboard'; }catch{ return 'dashboard'; }});
   const [sideOpen,setSide]=useState(false);
   const [clients,setClients]=useState([]);const [locations,setLocs]=useState([]);
