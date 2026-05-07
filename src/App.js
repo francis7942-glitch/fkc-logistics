@@ -765,6 +765,7 @@ function Billing({clients}){
   };
   const client=clients.find(c=>c.id===result?.clientId);
   const allTxs=result?[...result.inTxsInPeriod,...result.outTxs].sort((a,b)=>a.date.localeCompare(b.date)):[];
+  const clientInvoices=qboInvoices.filter(i=>i.customer_name?.toLowerCase()===client?.name?.toLowerCase());
   const [qboInvoices,setQboInvoices]=useState([]);
   const [loadingInvoices,setLoadingInvoices]=useState(false);
   const [showInvoices,setShowInvoices]=useState(false);
