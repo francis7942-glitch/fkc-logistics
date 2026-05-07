@@ -423,26 +423,31 @@ export async function computeBilling(clientId, dateFrom, dateTo) {
   const chlIds = new Set(items.filter(i => i.storage_type === 'chilled').map(i => i.id));
 
   // Build effective rates per storage type (client rates override global)
+  // Use ?? (nullish coalescing) not || to handle 0 values correctly
+  const cr = clientRates;
+  const gr = globalRates;
   const effectiveRates = {
     frozen: {
-      storage:     clientRates?.frozen_storage_per_kg_per_day  || globalRates.storage_per_kg_per_day,
-      handling_in: clientRates?.frozen_handling_in_per_kg       || globalRates.handling_in_per_kg,
-      handling_out:clientRates?.frozen_handling_out_per_kg      || globalRates.handling_out_per_kg,
-      charge_out:  clientRates ? clientRates.frozen_charge_handling_out : true,
+      storage:     cr ? (cr.frozen_storage_per_kg_per_day  ?? gr.storage_per_kg_per_day) : gr.storage_per_kg_per_day,
+      handling_in: cr ? (cr.frozen_handling_in_per_kg       ?? gr.handling_in_per_kg)    : gr.handling_in_per_kg,
+      handling_out:cr ? (cr.frozen_handling_out_per_kg      ?? gr.handling_out_per_kg)   : gr.handling_out_per_kg,
+      charge_out:  cr ? cr.frozen_charge_handling_out : true,
     },
     chilled: {
-      storage:     clientRates?.chilled_storage_per_kg_per_day || globalRates.storage_per_kg_per_day,
-      handling_in: clientRates?.chilled_handling_in_per_kg      || globalRates.handling_in_per_kg,
-      handling_out:clientRates?.chilled_handling_out_per_kg     || globalRates.handling_out_per_kg,
-      charge_out:  clientRates ? clientRates.chilled_charge_handling_out : true,
+      storage:     cr ? (cr.chilled_storage_per_kg_per_day ?? gr.storage_per_kg_per_day) : gr.storage_per_kg_per_day,
+      handling_in: cr ? (cr.chilled_handling_in_per_kg      ?? gr.handling_in_per_kg)    : gr.handling_in_per_kg,
+      handling_out:cr ? (cr.chilled_handling_out_per_kg     ?? gr.handling_out_per_kg)   : gr.handling_out_per_kg,
+      charge_out:  cr ? cr.chilled_charge_handling_out : true,
     },
     dry: {
-      storage:     clientRates?.dry_storage_per_kg_per_day     || globalRates.storage_per_kg_per_day,
-      handling_in: clientRates?.dry_handling_in_per_kg          || globalRates.handling_in_per_kg,
-      handling_out:clientRates?.dry_handling_out_per_kg         || globalRates.handling_out_per_kg,
-      charge_out:  clientRates ? clientRates.dry_charge_handling_out : true,
+      storage:     cr ? (cr.dry_storage_per_kg_per_day     ?? gr.storage_per_kg_per_day) : gr.storage_per_kg_per_day,
+      handling_in: cr ? (cr.dry_handling_in_per_kg          ?? gr.handling_in_per_kg)    : gr.handling_in_per_kg,
+      handling_out:cr ? (cr.dry_handling_out_per_kg         ?? gr.handling_out_per_kg)   : gr.handling_out_per_kg,
+      charge_out:  cr ? cr.dry_charge_handling_out : true,
     },
   };
+  console.log('Client rates:', cr);
+  console.log('Effective frozen storage rate:', effectiveRates.frozen.storage);
 
   // Helper to get storage type of an item
   const getItemType = (itemId) => {
