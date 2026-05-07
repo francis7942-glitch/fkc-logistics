@@ -1056,7 +1056,7 @@ function Billing({clients}){
             {/* Storage Fee — Daily Running Balance Breakdown */}
             <div style={{padding:'9px 0',borderBottom:'1px solid var(--bd)'}}>
               <div style={{display:'flex',justifyContent:'space-between',fontSize:13.5,marginBottom:8}}>
-                <span>Storage Fee <span style={{color:'var(--tx2)',fontFamily:'JetBrains Mono',fontSize:11}}>({fmtM(result.rates.storage_per_kg_per_day)}/kg/day · daily running balance)</span></span>
+                <span>Storage Fee <span style={{color:'var(--tx2)',fontFamily:'JetBrains Mono',fontSize:11}}>({fmtM(result.effectiveRates?.frozen?.storage||result.rates.storage_per_kg_per_day)}/kg/day · daily running balance)</span></span>
                 <span style={{fontFamily:'JetBrains Mono',fontWeight:700}}>{fmtM(result.storage)}</span>
               </div>
               {result.dailyRows&&result.dailyRows.length>0&&<div style={{background:'var(--sur2)',borderRadius:'var(--r)',overflow:'hidden',marginTop:4,fontSize:12}}>
@@ -1067,7 +1067,7 @@ function Billing({clients}){
                   <div key={i} style={{display:'grid',gridTemplateColumns:'130px 1fr 120px 120px',borderBottom:'1px solid var(--bd)',background:i%2===0?'':'rgba(255,255,255,.02)'}}>
                     <div style={{padding:'7px 10px',fontFamily:'JetBrains Mono',fontSize:11,color:'var(--tx2)'}}>{fmtD(row.date)}</div>
                     <div style={{padding:'7px 10px',fontFamily:'JetBrains Mono',fontWeight:600}}>{fmtKg(row.totalKg)}</div>
-                    <div style={{padding:'7px 10px',fontFamily:'JetBrains Mono',color:'var(--tx2)'}}>{fmtM(result.rates.storage_per_kg_per_day)}</div>
+                    <div style={{padding:'7px 10px',fontFamily:'JetBrains Mono',color:'var(--tx2)'}}>{fmtM(result.effectiveRates?.frozen?.storage||result.rates.storage_per_kg_per_day)}</div>
                     <div style={{padding:'7px 10px',fontFamily:'JetBrains Mono',color:'var(--ac)',fontWeight:600}}>{fmtM(row.charge)}</div>
                   </div>
                 ))}
