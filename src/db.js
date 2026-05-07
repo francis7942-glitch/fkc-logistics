@@ -23,6 +23,10 @@ export async function saveUser(u) {
   const { error } = await supabase.from('users').upsert({ ...u, id: u.id || uid() });
   if (error) throw error;
 }
+
+export async function updateLastLogin(userId) {
+  await supabase.from('users').update({ last_login: new Date().toISOString() }).eq('id', userId);
+}
 export async function deleteUser(id) {
   const { error } = await supabase.from('users').delete().eq('id', id);
   if (error) throw error;
@@ -251,11 +255,188 @@ export async function getMonthlyRevenue(year, clientId = '') {
   return months;
 }
 
+
+
+// ── ROLES & PERMISSIONS ───────────────────────────────────────────
+export const MODULES = [
+  { id:'mod_dashboard',     label:'Dashboard',     icon:'📊', category:'Operations',  path:'dashboard' },
+  { id:'mod_stock_in',      label:'Stock In',      icon:'📥', category:'Operations',  path:'stock-in' },
+  { id:'mod_stock_out',     label:'Stock Out',     icon:'📤', category:'Operations',  path:'stock-out' },
+  { id:'mod_transactions',  label:'Transactions',  icon:'📋', category:'Operations',  path:'transactions' },
+  { id:'mod_contracts',     label:'Dry Contracts', icon:'📋', category:'Management',  path:'contracts' },
+  { id:'mod_item_database', label:'Item Database', icon:'📦', category:'Management',  path:'items' },
+  { id:'mod_clients',       label:'Clients',       icon:'🏢', category:'Management',  path:'clients' },
+  { id:'mod_billing',       label:'Billing',       icon:'📄', category:'Management',  path:'billing' },
+  { id:'mod_spare_parts',   label:'Spare Parts',   icon:'🔧', category:'Maintenance', path:'spareparts' },
+  { id:'mod_settings',      label:'Settings',      icon:'⚙️', category:'System',      path:'settings' },
+];
+
+export const PROCESSES = [
+  { id:'perm_stock_in_create',       label:'Create Stock In',          module:'Stock In' },
+  { id:'perm_stock_in_delete',       label:'Delete Stock In',          module:'Stock In' },
+  { id:'perm_stock_out_create',      label:'Create Stock Out',         module:'Stock Out' },
+  { id:'perm_stock_out_delete',      label:'Delete Stock Out',         module:'Stock Out' },
+  { id:'perm_tx_view_all_clients',   label:'View All Clients',         module:'Transactions' },
+  { id:'perm_tx_export',             label:'Export Transactions',      module:'Transactions' },
+  { id:'perm_client_create',         label:'Create Clients',           module:'Clients' },
+  { id:'perm_client_edit',           label:'Edit Clients',             module:'Clients' },
+  { id:'perm_client_delete',         label:'Delete Clients',           module:'Clients' },
+  { id:'perm_item_create',           label:'Create Items',             module:'Item Database' },
+  { id:'perm_item_edit',             label:'Edit Items',               module:'Item Database' },
+  { id:'perm_item_delete',           label:'Delete Items',             module:'Item Database' },
+  { id:'perm_billing_generate',      label:'Generate Billing',         module:'Billing' },
+  { id:'perm_billing_push_qbo',      label:'Push to QuickBooks',       module:'Billing' },
+  { id:'perm_billing_view_rates',    label:'View Rates',               module:'Billing' },
+  { id:'perm_billing_edit_rates',    label:'Edit Rates',               module:'Billing' },
+  { id:'perm_contract_create',       label:'Create Contracts',         module:'Contracts' },
+  { id:'perm_contract_edit',         label:'Edit Contracts',           module:'Contracts' },
+  { id:'perm_contract_delete',       label:'Delete Contracts',         module:'Contracts' },
+  { id:'perm_sp_receive',            label:'Receive Parts',            module:'Spare Parts' },
+  { id:'perm_sp_issue',              label:'Issue Parts',              module:'Spare Parts' },
+  { id:'perm_sp_adjust',             label:'Adjust Stock',             module:'Spare Parts' },
+  { id:'perm_sp_manage_parts',       label:'Manage Parts',             module:'Spare Parts' },
+  { id:'perm_sp_approve_pr',         label:'Approve Purchase Requests',module:'Spare Parts' },
+  { id:'perm_manage_users',          label:'Manage Users',             module:'Settings' },
+  { id:'perm_manage_roles',          label:'Manage Roles',             module:'Settings' },
+  { id:'perm_manage_rates',          label:'Manage Rates',             module:'Settings' },
+  { id:'perm_manage_locations',      label:'Manage Locations',         module:'Settings' },
+];
+
+export async function getRoles() {
+  const { data } = await supabase.from('roles').select('*').order('name');
+  return data || [];
+}
+
+export async function saveRole(role) {
+  const isNew = !role.id;
+  const id = role.id || 'ROLE' + Math.random().toString(36).slice(2,8).toUpperCase();
+  const { error } = await supabase.from('roles').upsert({ ...role, id });
+  if (error) throw error;
+  if (isNew) {
+    // Auto-seed permissions for new role — dashboard visible by default
+    await supabase.from('role_permissions').insert({
+      id: 'RP' + Math.random().toString(36).slice(2,8).toUpperCase(),
+      role_id: id,
+      mod_dashboard: true,
+    });
+  }
+  return id;
+}
+
+export async function deleteRole(id) {
+  const { data } = await supabase.from('roles').select('is_system').eq('id', id).single();
+  if (data?.is_system) throw new Error('Cannot delete a system role.');
+  await supabase.from('role_permissions').delete().eq('role_id', id);
+  await supabase.from('roles').delete().eq('id', id);
+}
+
+export async function getRolePermissions(roleId) {
+  const { data } = await supabase.from('role_permissions').select('*').eq('role_id', roleId).single();
+  return data || { role_id: roleId, mod_dashboard: true };
+}
+
+export async function saveRolePermissions(perms) {
+  const { error } = await supabase.from('role_permissions').upsert({ ...perms, updated_at: new Date().toISOString() });
+  if (error) throw error;
+}
+
+export async function getUserPermissions(roleId) {
+  if (!roleId) return {};
+  const { data } = await supabase.from('role_permissions').select('*').eq('role_id', roleId).single();
+  return data || {};
+}
+
+// ── ACTIVITY LOG ──────────────────────────────────────────────────
+export async function logActivity({ userId, userName, roleName, action, module, description, recordId, recordName, metadata } = {}) {
+  try {
+    await supabase.from('activity_logs').insert({
+      id: 'LOG' + Math.random().toString(36).slice(2,10).toUpperCase(),
+      user_id: userId, user_name: userName, role_name: roleName,
+      action, module, description, record_id: recordId, record_name: recordName,
+      metadata: metadata || null,
+      created_at: new Date().toISOString(),
+    });
+  } catch(e) { console.warn('Activity log failed:', e.message); }
+}
+
+export async function getActivityLogs({ userId, module, limit = 200 } = {}) {
+  let q = supabase.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(limit);
+  if (userId) q = q.eq('user_id', userId);
+  if (module) q = q.eq('module', module);
+  const { data } = await q;
+  return data || [];
+}
+
+// ── CLIENT RATES ──────────────────────────────────────────────────
+export async function getClientRates(clientId) {
+  const { data } = await supabase.from('client_rates').select('*').eq('client_id', clientId).single();
+  return data || null;
+}
+
+export async function saveClientRates(rates) {
+  const { error } = await supabase.from('client_rates').upsert({
+    ...rates,
+    id: rates.id || 'CR' + Math.random().toString(36).slice(2,10).toUpperCase(),
+    updated_at: new Date().toISOString(),
+  });
+  if (error) throw error;
+}
+
+export async function getClientContainers(clientId) {
+  const { data } = await supabase.from('client_containers').select('*')
+    .eq('client_id', clientId).order('name');
+  return data || [];
+}
+
+export async function saveClientContainer(container) {
+  const { error } = await supabase.from('client_containers').upsert({
+    ...container,
+    id: container.id || 'CON' + Math.random().toString(36).slice(2,10).toUpperCase(),
+  });
+  if (error) throw error;
+}
+
+export async function deleteClientContainer(id) {
+  await supabase.from('client_containers').delete().eq('id', id);
+}
+
 // ── BILLING — DAILY RUNNING BALANCE METHOD ────────────────────────
 export async function computeBilling(clientId, dateFrom, dateTo) {
-  const rates = await getRates();
+  const globalRates = await getRates();
+  const clientRates = await getClientRates(clientId);
+  const containers  = await getClientContainers(clientId);
   const items = await getItems(clientId);
   const dryIds = new Set(items.filter(i => i.storage_type === 'dry').map(i => i.id));
+  const chlIds = new Set(items.filter(i => i.storage_type === 'chilled').map(i => i.id));
+
+  // Build effective rates per storage type (client rates override global)
+  const effectiveRates = {
+    frozen: {
+      storage:     clientRates?.frozen_storage_per_kg_per_day  || globalRates.storage_per_kg_per_day,
+      handling_in: clientRates?.frozen_handling_in_per_kg       || globalRates.handling_in_per_kg,
+      handling_out:clientRates?.frozen_handling_out_per_kg      || globalRates.handling_out_per_kg,
+      charge_out:  clientRates ? clientRates.frozen_charge_handling_out : true,
+    },
+    chilled: {
+      storage:     clientRates?.chilled_storage_per_kg_per_day || globalRates.storage_per_kg_per_day,
+      handling_in: clientRates?.chilled_handling_in_per_kg      || globalRates.handling_in_per_kg,
+      handling_out:clientRates?.chilled_handling_out_per_kg     || globalRates.handling_out_per_kg,
+      charge_out:  clientRates ? clientRates.chilled_charge_handling_out : true,
+    },
+    dry: {
+      storage:     clientRates?.dry_storage_per_kg_per_day     || globalRates.storage_per_kg_per_day,
+      handling_in: clientRates?.dry_handling_in_per_kg          || globalRates.handling_in_per_kg,
+      handling_out:clientRates?.dry_handling_out_per_kg         || globalRates.handling_out_per_kg,
+      charge_out:  clientRates ? clientRates.dry_charge_handling_out : true,
+    },
+  };
+
+  // Helper to get storage type of an item
+  const getItemType = (itemId) => {
+    if (dryIds.has(itemId)) return 'dry';
+    if (chlIds.has(itemId)) return 'chilled';
+    return 'frozen';
+  };
 
   // Get ALL transactions up to end of billing period (need history for opening balance)
   const { data: allTxs } = await supabase.from('transactions')
@@ -268,9 +449,16 @@ export async function computeBilling(clientId, dateFrom, dateTo) {
   const inTxs     = inPeriod.filter(t => t.type === 'IN');
   const outTxs    = inPeriod.filter(t => t.type === 'OUT');
 
-  // Handling fees (only for transactions within the billing period)
-  const hIn  = inTxs.reduce((s,t)  => s + t.kg * rates.handling_in_per_kg,  0);
-  const hOut = outTxs.reduce((s,t) => s + t.kg * rates.handling_out_per_kg, 0);
+  // Handling fees using per-type client rates
+  const hIn  = inTxs.reduce((s,t)  => {
+    const type = getItemType(t.item_id);
+    return s + t.kg * effectiveRates[type].handling_in;
+  }, 0);
+  const hOut = outTxs.reduce((s,t) => {
+    const type = getItemType(t.item_id);
+    if (!effectiveRates[type].charge_out) return s;
+    return s + t.kg * effectiveRates[type].handling_out;
+  }, 0);
 
   // ── DAILY RUNNING BALANCE STORAGE COMPUTATION ────────────────────
   // Build a map of all transactions grouped by item
@@ -308,7 +496,16 @@ export async function computeBilling(clientId, dateFrom, dateTo) {
       }
     }
 
-    const dayCharge = dayTotalKg * rates.storage_per_kg_per_day;
+    // Compute charge per item type using correct rate
+    let dayCharge = 0;
+    for (const item of dayItems) {
+      const itemEntry = Object.entries(itemMap).find(([,v]) => v.name === item.item_name);
+      if (itemEntry) {
+        const itemId = itemEntry[0];
+        const type = getItemType(itemId);
+        dayCharge += item.kg * effectiveRates[type].storage;
+      }
+    }
     totalStorage += dayCharge;
 
     dailyRows.push({
@@ -319,7 +516,22 @@ export async function computeBilling(clientId, dateFrom, dateTo) {
     });
   }
 
-  const coldTotal = hIn + hOut + totalStorage;
+  // Container rental fees for the billing period
+  const containerFees = containers.filter(c => c.active).map(c => {
+    const from = new Date(dateFrom);
+    const to   = new Date(dateTo);
+    const days = Math.ceil((to - from) / 864e5) + 1;
+    let fee = 0;
+    if (c.fee_type === 'monthly') {
+      fee = c.fee_amount * (days / 30);
+    } else if (c.fee_type === 'weekly') {
+      fee = c.fee_amount * (days / 7);
+    }
+    return { ...c, days, fee: Math.round(fee * 100) / 100 };
+  });
+  const totalContainerFees = containerFees.reduce((s,c) => s + c.fee, 0);
+
+  const coldTotal = hIn + hOut + totalStorage + totalContainerFees;
   const dryBilling = await computeDryBillingRange(clientId, dateFrom, dateTo);
 
   return {
@@ -328,11 +540,15 @@ export async function computeBilling(clientId, dateFrom, dateTo) {
     outTxs,
     hIn, hOut,
     storage: totalStorage,
-    dailyRows, // day-by-day breakdown
+    dailyRows,
+    containerFees,
+    totalContainerFees,
     coldTotal,
     dryBilling,
     total: coldTotal + dryBilling.total,
-    rates,
+    rates: globalRates,
+    effectiveRates,
+    clientRates,
   };
 }
 

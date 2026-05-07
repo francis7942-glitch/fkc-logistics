@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import * as db from "./db";
+const { MODULES, PROCESSES } = db;
+const CATEGORIES = ['Operations','Management','Maintenance','System'];
 
 
 const _st = document.createElement("style");
@@ -541,6 +543,18 @@ function ItemDatabase({clients}){
   const STYPES=["frozen","chilled","dry"];
   const reload=useCallback(async()=>{setLoading(true);setAllItems(await db.getItems());setLoading(false);},[]);
   useEffect(()=>{reload();},[reload]);
+  useEffect(()=>{
+    if(user?.role_id){
+      db.getUserPermissions(user.role_id).then(p=>setUserPerms(p||{}));
+    } else if(user?.role==='admin'){
+      // Legacy admin fallback - give full perms
+      db.getUserPermissions('ROLE_ADMIN').then(p=>setUserPerms(p||{}));
+    } else if(user){
+      db.getUserPermissions('ROLE_PERSONNEL').then(p=>setUserPerms(p||{}));
+    }
+  },[user]);
+  const can=(perm)=>!!(userPerms[perm]||(user?.role==='admin'));
+  const canSee=(mod)=>!!(userPerms[mod]||(user?.role==='admin'));
   const openNew=(cid='')=>{setForm({name:'',code:'',client_id:cid,storage_type:'frozen',notes:''});setModal('new');};
   const openEdit=item=>{setForm({...item});setModal('edit');};
   const save=async()=>{
@@ -595,9 +609,172 @@ function ItemDatabase({clients}){
 }
 
 // ----------------------------------------
+
+// ── CLIENT RATES MODAL ────────────────────────────────────────────
+function ClientRatesModal({client, onClose, onSaved}){
+  const blank = {
+    client_id: client.id,
+    frozen_storage_per_kg_per_day: 0,
+    frozen_handling_in_per_kg: 0,
+    frozen_handling_out_per_kg: 0,
+    frozen_charge_handling_out: true,
+    chilled_storage_per_kg_per_day: 0,
+    chilled_handling_in_per_kg: 0,
+    chilled_handling_out_per_kg: 0,
+    chilled_charge_handling_out: true,
+    dry_storage_per_kg_per_day: 0,
+    dry_handling_in_per_kg: 0,
+    dry_handling_out_per_kg: 0,
+    dry_charge_handling_out: true,
+  };
+  const [form, setForm] = useState(blank);
+  const [containers, setContainers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [tab, setTab] = useState('frozen');
+  const s = (k,v) => setForm(f => ({...f, [k]: v}));
+
+  useEffect(() => {
+    Promise.all([db.getClientRates(client.id), db.getClientContainers(client.id)])
+      .then(([rates, cons]) => {
+        if (rates) setForm({...blank, ...rates, client_id: client.id});
+        setContainers(cons);
+        setLoading(false);
+      });
+  }, [client.id]);
+
+  const save = async () => {
+    setSaving(true);
+    await db.saveClientRates(form);
+    setSaving(false);
+    onSaved();
+    onClose();
+  };
+
+  const addContainer = () => setContainers(c => [...c, {
+    id: '', client_id: client.id, name: '', storage_type: 'frozen',
+    fee_type: 'monthly', fee_amount: 0, start_date: '', end_date: '', active: true, notes: ''
+  }]);
+
+  const updateContainer = (i, k, v) => setContainers(c => c.map((x,j) => j===i ? {...x,[k]:v} : x));
+
+  const saveContainer = async (con, i) => {
+    if (!con.name?.trim()) return alert('Container name required.');
+    await db.saveClientContainer({...con, client_id: client.id});
+    const fresh = await db.getClientContainers(client.id);
+    setContainers(fresh);
+  };
+
+  const delContainer = async (con, i) => {
+    if (con.id && window.confirm(`Delete "${con.name}"?`)) {
+      await db.deleteClientContainer(con.id);
+      setContainers(c => c.filter((_,j) => j!==i));
+    } else if (!con.id) {
+      setContainers(c => c.filter((_,j) => j!==i));
+    }
+  };
+
+  const TYPES = ['frozen','chilled','dry'];
+  const typeColor = {frozen:'var(--bl)',chilled:'var(--ac)',dry:'var(--or)'};
+  const typeIcon = {frozen:'🧊',chilled:'🌡️',dry:'📦'};
+
+  const RateRow = ({label, field, isCheck=false}) => (
+    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 0',borderBottom:'1px solid var(--bd)'}}>
+      <span style={{fontSize:13,color:'var(--tx2)'}}>{label}</span>
+      {isCheck
+        ? <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer'}}>
+            <input type="checkbox" checked={!!form[field]} onChange={e=>s(field,e.target.checked)} style={{width:16,height:16,accentColor:'var(--ac)'}}/>
+            <span style={{fontSize:12,color:form[field]?'var(--ac)':'var(--tx3)'}}>{form[field]?'Yes — charge handling out':'No — waived'}</span>
+          </label>
+        : <input type="number" step="0.001" min="0" value={form[field]||''} onChange={e=>s(field,parseFloat(e.target.value)||0)}
+            style={{width:120,padding:'6px 10px',background:'var(--sur3)',border:'1px solid var(--bd)',borderRadius:'var(--r)',color:'var(--tx)',fontSize:13,textAlign:'right',outline:'none',fontFamily:'JetBrains Mono'}}/>
+      }
+    </div>
+  );
+
+  return(
+    <div className="ov" onClick={onClose}>
+      <div className="mdl wide" onClick={e=>e.stopPropagation()} style={{maxWidth:620}}>
+        <div className="mhd">
+          <span>Rate Card — {client.name}</span>
+          <button onClick={onClose}>✕</button>
+        </div>
+        <div className="mbd">
+          {loading ? <Spinner/> : <>
+            {/* Type tabs */}
+            <div className="sp-tabs" style={{marginBottom:20}}>
+              {TYPES.map(t=>(
+                <button key={t} className={`sp-tab ${tab===t?'on':''}`} onClick={()=>setTab(t)}
+                  style={tab===t?{color:typeColor[t],background:'var(--sur3)'}:{}}>
+                  {typeIcon[t]} {t.charAt(0).toUpperCase()+t.slice(1)}
+                </button>
+              ))}
+              <button className={`sp-tab ${tab==='containers'?'on':''}`} onClick={()=>setTab('containers')}>
+                🏗 Containers ({containers.length})
+              </button>
+            </div>
+
+            {/* Rates per type */}
+            {TYPES.includes(tab) && <>
+              <div style={{background:'var(--sur2)',borderRadius:'var(--r)',padding:'4px 16px',marginBottom:16}}>
+                <RateRow label={`${tab.charAt(0).toUpperCase()+tab.slice(1)} Storage (₱/kg/day)`} field={`${tab}_storage_per_kg_per_day`}/>
+                <RateRow label="Handling In (₱/kg)" field={`${tab}_handling_in_per_kg`}/>
+                <RateRow label="Handling Out (₱/kg)" field={`${tab}_handling_out_per_kg`}/>
+                <RateRow label="Charge Handling Out?" field={`${tab}_charge_handling_out`} isCheck={true}/>
+              </div>
+              <div style={{background:'var(--acd)',borderRadius:'var(--r)',padding:'10px 14px',fontSize:12,color:'var(--ac)'}}>
+                💡 Example: 100 kg stored for 7 days = ₱{((form[`${tab}_storage_per_kg_per_day`]||0)*100*7).toFixed(2)} storage fee
+              </div>
+            </>}
+
+            {/* Containers */}
+            {tab==='containers' && <>
+              <div className="info-box" style={{marginBottom:16}}>
+                Container rentals are billed as flat fees (monthly or weekly) in addition to handling fees. Leave end date empty for ongoing rentals.
+              </div>
+              {containers.map((con,i)=>(
+                <div key={i} style={{background:'var(--sur2)',border:'1px solid var(--bd)',borderRadius:'var(--rl)',padding:'14px 16px',marginBottom:10}}>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
+                    <div className="fg"><label>Container Name *</label><input value={con.name} onChange={e=>updateContainer(i,'name',e.target.value)} placeholder="e.g. Container A"/></div>
+                    <div className="fg"><label>Storage Type</label>
+                      <select value={con.storage_type} onChange={e=>updateContainer(i,'storage_type',e.target.value)}>
+                        {TYPES.map(t=><option key={t} value={t}>{typeIcon[t]} {t}</option>)}
+                      </select>
+                    </div>
+                    <div className="fg"><label>Fee Type</label>
+                      <select value={con.fee_type} onChange={e=>updateContainer(i,'fee_type',e.target.value)}>
+                        <option value="monthly">Monthly</option>
+                        <option value="weekly">Weekly</option>
+                      </select>
+                    </div>
+                    <div className="fg"><label>Fee Amount (₱)</label><input type="number" step="0.01" min="0" value={con.fee_amount||''} onChange={e=>updateContainer(i,'fee_amount',parseFloat(e.target.value)||0)} style={{fontFamily:'JetBrains Mono'}}/></div>
+                    <div className="fg"><label>Start Date</label><input type="date" value={con.start_date||''} onChange={e=>updateContainer(i,'start_date',e.target.value)}/></div>
+                    <div className="fg"><label>End Date (blank = ongoing)</label><input type="date" value={con.end_date||''} onChange={e=>updateContainer(i,'end_date',e.target.value)}/></div>
+                  </div>
+                  <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+                    <button className="btn bac" style={{fontSize:12,padding:'6px 14px'}} onClick={()=>saveContainer(con,i)}>💾 Save</button>
+                    <button className="ib dl" onClick={()=>delContainer(con,i)}>🗑</button>
+                  </div>
+                </div>
+              ))}
+              <button className="btn bgh" onClick={addContainer}>+ Add Container</button>
+            </>}
+
+            <div className="mft" style={{marginTop:20}}>
+              <button className="btn bgh" onClick={onClose}>Cancel</button>
+              {TYPES.includes(tab) && <button className="btn bac" onClick={save} disabled={saving}>{saving?'Saving…':'💾 Save Rates'}</button>}
+            </div>
+          </>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Clients(){
   const [clients,setClients]=useState([]);const [loading,setLoading]=useState(true);
   const [modal,setModal]=useState(null);const [form,setForm]=useState({});const [saving,setSaving]=useState(false);
+  const [ratesClient,setRatesClient]=useState(null);
   const s=(k,v)=>setForm(f=>({...f,[k]:v}));
   const reload=useCallback(async()=>{
     setLoading(true);
@@ -606,6 +783,18 @@ function Clients(){
     setLoading(false);
   },[]);
   useEffect(()=>{reload();},[reload]);
+  useEffect(()=>{
+    if(user?.role_id){
+      db.getUserPermissions(user.role_id).then(p=>setUserPerms(p||{}));
+    } else if(user?.role==='admin'){
+      // Legacy admin fallback - give full perms
+      db.getUserPermissions('ROLE_ADMIN').then(p=>setUserPerms(p||{}));
+    } else if(user){
+      db.getUserPermissions('ROLE_PERSONNEL').then(p=>setUserPerms(p||{}));
+    }
+  },[user]);
+  const can=(perm)=>!!(userPerms[perm]||(user?.role==='admin'));
+  const canSee=(mod)=>!!(userPerms[mod]||(user?.role==='admin'));
   const openNew=()=>{setForm({name:'',contact:'',email:'',address:''});setModal('new');};
   const openEdit=c=>{setForm({...c});setModal('edit');};
   const save=async()=>{
@@ -662,6 +851,7 @@ function Clients(){
 
   return(
     <div className="con">
+      {ratesClient&&<ClientRatesModal client={ratesClient} onClose={()=>setRatesClient(null)} onSaved={reload}/>}
       {syncModal&&(
         <div className="ov" onClick={()=>setSyncModal(false)}>
           <div className="mdl wide" onClick={e=>e.stopPropagation()}>
@@ -716,7 +906,7 @@ function Clients(){
         <tbody>{clients.length===0?<tr className="erow"><td colSpan={6}>No clients yet.</td></tr>:clients.map(c=>(
           <tr key={c.id}><td><strong>{c.name}</strong></td><td style={{color:'var(--tx2)'}}>{c.contact||'—'}</td><td style={{color:'var(--tx2)'}}>{c.email||'—'}</td><td style={{color:'var(--tx2)'}}>{c.address||'—'}</td>
           <td><span className="bdg b-on">{c._itemCount||0} item{c._itemCount!==1?'s':''}</span></td>
-          <td><div style={{display:'flex',gap:4,justifyContent:'flex-end'}}><button className="ib" onClick={()=>openEdit(c)}>✏️</button><button className="ib dl" onClick={()=>del(c.id)}>🗑</button></div></td></tr>
+          <td><div style={{display:'flex',gap:4,justifyContent:'flex-end'}}><button className="ib" title="Rate Card" onClick={()=>setRatesClient(c)}>💰</button><button className="ib" onClick={()=>openEdit(c)}>✏️</button><button className="ib dl" onClick={()=>del(c.id)}>🗑</button></div></td></tr>
         ))}</tbody>
       </table></div>}
     </div>
@@ -834,7 +1024,10 @@ function Billing({clients}){
             ))}</tbody></table>
           </div>
           <div style={{padding:'10px 24px'}}>
-            {[['Handling Fee — Stock In',`(${fmtM(result.rates.handling_in_per_kg)}/kg)`,result.hIn],['Handling Fee — Stock Out',`(${fmtM(result.rates.handling_out_per_kg)}/kg)`,result.hOut]].map(([l,sub,v])=>(
+            {[
+              ['Handling Fee — Stock In', result.clientRates?`(custom rate)`:result.effectiveRates?'(frozen)':'', result.hIn],
+              ['Handling Fee — Stock Out', result.clientRates?`(custom rate)`:result.effectiveRates?'(frozen)':'', result.hOut]
+            ].map(([l,sub,v])=>(
               <div key={l} style={{display:'flex',justifyContent:'space-between',padding:'9px 0',borderBottom:'1px solid var(--bd)',fontSize:13.5}}>
                 <span>{l}<span style={{color:'var(--tx2)',fontFamily:'JetBrains Mono',fontSize:11}}> {sub}</span></span>
                 <span style={{fontFamily:'JetBrains Mono'}}>{fmtM(v)}</span>
@@ -864,6 +1057,12 @@ function Billing({clients}){
                 </div>
               </div>}
             </div>
+            {result.containerFees&&result.containerFees.length>0&&result.containerFees.map(c=>(
+              <div key={c.id} style={{display:'flex',justifyContent:'space-between',padding:'9px 0',borderBottom:'1px solid var(--bd)',fontSize:13.5}}>
+                <span>Container Rental — {c.name} <span style={{color:'var(--tx2)',fontFamily:'JetBrains Mono',fontSize:11}}>({c.fee_type})</span></span>
+                <span style={{fontFamily:'JetBrains Mono'}}>{fmtM(c.fee)}</span>
+              </div>
+            ))}
             <div style={{display:'flex',justifyContent:'space-between',padding:'9px 0',borderBottom:'1px solid var(--bd)',fontSize:14,fontWeight:700}}>
               <span>Cold/Chilled Subtotal</span><span style={{fontFamily:'JetBrains Mono'}}>{fmtM(result.coldTotal)}</span>
             </div>
@@ -1057,6 +1256,18 @@ function Contracts({clients,locations}){
   const td=today(),curYM=today().slice(0,7);
   const reload=useCallback(async()=>{setLoading(true);setContracts(await db.getContracts());setLoading(false);},[]);
   useEffect(()=>{reload();},[reload]);
+  useEffect(()=>{
+    if(user?.role_id){
+      db.getUserPermissions(user.role_id).then(p=>setUserPerms(p||{}));
+    } else if(user?.role==='admin'){
+      // Legacy admin fallback - give full perms
+      db.getUserPermissions('ROLE_ADMIN').then(p=>setUserPerms(p||{}));
+    } else if(user){
+      db.getUserPermissions('ROLE_PERSONNEL').then(p=>setUserPerms(p||{}));
+    }
+  },[user]);
+  const can=(perm)=>!!(userPerms[perm]||(user?.role==='admin'));
+  const canSee=(mod)=>!!(userPerms[mod]||(user?.role==='admin'));
   const openNew=()=>{setForm(blank);setModal('new');};
   const openEdit=c=>{setForm({...c,periods:(c.periods||[]).map(p=>({...p,start:p.start_date||p.start,end:p.end_date||p.end}))});setModal('edit');};
   const openView=c=>{setForm({...c});setModal('view');};
@@ -1250,6 +1461,18 @@ function SpareParts({user}){
     setParts(p);setMachines(m);setMovements(mv);setPRs(pr);setDash(d);setLoading(false);
   },[]);
   useEffect(()=>{reload();},[reload]);
+  useEffect(()=>{
+    if(user?.role_id){
+      db.getUserPermissions(user.role_id).then(p=>setUserPerms(p||{}));
+    } else if(user?.role==='admin'){
+      // Legacy admin fallback - give full perms
+      db.getUserPermissions('ROLE_ADMIN').then(p=>setUserPerms(p||{}));
+    } else if(user){
+      db.getUserPermissions('ROLE_PERSONNEL').then(p=>setUserPerms(p||{}));
+    }
+  },[user]);
+  const can=(perm)=>!!(userPerms[perm]||(user?.role==='admin'));
+  const canSee=(mod)=>!!(userPerms[mod]||(user?.role==='admin'));
   const fp=parts.filter(p=>{const q=search.toLowerCase();if(q&&!p.name.toLowerCase().includes(q)&&!p.part_no.toLowerCase().includes(q))return false;if(catFilter&&p.category!==catFilter)return false;return true;});
   const cats=[...new Set(parts.map(p=>p.category).filter(Boolean))].sort();
   const prC={urgent:'var(--rd)',high:'var(--or)',normal:'var(--bl)'};
@@ -1454,6 +1677,186 @@ function QBOSettings(){
   );
 }
 
+
+// ── ACTIVITY LOG ──────────────────────────────────────────────────
+function ActivityLog({user}){
+  const [logs,setLogs]=useState([]);const [loading,setLoading]=useState(true);
+  const [mFilter,setMFilter]=useState('');const [uFilter,setUFilter]=useState('');
+  const [users,setUsers]=useState([]);
+  useEffect(()=>{
+    Promise.all([db.getActivityLogs({limit:500}),db.getUsers()]).then(([l,u])=>{setLogs(l);setUsers(u);setLoading(false);});
+  },[]);
+  const modules=[...new Set(logs.map(l=>l.module))].sort();
+  const filtered=logs.filter(l=>{
+    if(mFilter&&l.module!==mFilter) return false;
+    if(uFilter&&l.user_id!==uFilter) return false;
+    return true;
+  });
+  const actionColor={STOCK_IN:'var(--ac)',STOCK_OUT:'var(--rd)',BILLING_GENERATED:'var(--pu)',BILLING_PUSHED_QBO:'#2CA01C',CLIENT_CREATED:'var(--bl)',CLIENT_EDITED:'var(--bl)',CLIENT_DELETED:'var(--rd)',USER_CREATED:'var(--ac)',ROLE_CREATED:'var(--ac)',PERM_UPDATED:'var(--or)'};
+  return(
+    <div className="con">
+      <div className="ph"><div className="phi bl">📜</div><h2>Activity Log</h2></div>
+      <div className="fbar" style={{marginBottom:16}}>
+        <select value={mFilter} onChange={e=>setMFilter(e.target.value)} style={{padding:'8px 12px',background:'var(--sur3)',border:'1px solid var(--bd)',borderRadius:'var(--r)',color:'var(--tx)',fontSize:13,outline:'none'}}>
+          <option value="">All Modules</option>{modules.map(m=><option key={m} value={m}>{m}</option>)}
+        </select>
+        <select value={uFilter} onChange={e=>setUFilter(e.target.value)} style={{padding:'8px 12px',background:'var(--sur3)',border:'1px solid var(--bd)',borderRadius:'var(--r)',color:'var(--tx)',fontSize:13,outline:'none'}}>
+          <option value="">All Users</option>{users.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
+        </select>
+        <span style={{fontSize:13,color:'var(--tx2)',alignSelf:'center',fontFamily:'JetBrains Mono'}}>{filtered.length} entries</span>
+        <button className="btn bgh mla" onClick={()=>{setMFilter('');setUFilter('');}}>Clear</button>
+      </div>
+      {loading?<Spinner/>:<div className="tw"><table>
+        <thead><tr><th>Time</th><th>User</th><th>Module</th><th>Action</th><th>Description</th></tr></thead>
+        <tbody>
+          {filtered.length===0&&<tr className="erow"><td colSpan={5}>No activity logs found.</td></tr>}
+          {filtered.map(l=>(
+            <tr key={l.id}>
+              <td style={{fontFamily:'JetBrains Mono',fontSize:11,color:'var(--tx2)',whiteSpace:'nowrap'}}>{new Date(l.created_at).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</td>
+              <td><div style={{fontWeight:600,fontSize:13}}>{l.user_name}</div><div style={{fontSize:11,color:'var(--tx2)'}}>{l.role_name}</div></td>
+              <td><span className="bdg b-per" style={{fontSize:11}}>{l.module}</span></td>
+              <td><span style={{fontFamily:'JetBrains Mono',fontSize:11,fontWeight:700,color:actionColor[l.action]||'var(--tx2)'}}>{l.action}</span></td>
+              <td style={{fontSize:12,color:'var(--tx2)',maxWidth:320}}>{l.description}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table></div>}
+    </div>
+  );
+}
+
+// ── PERMISSION MATRIX ─────────────────────────────────────────────
+function PermissionMatrix({role,onClose}){
+  const [perms,setPerms]=useState(null);const [saving,setSaving]=useState(false);const [saved,setSaved]=useState(false);
+  const [tab,setTab]=useState('modules');
+  useEffect(()=>{db.getRolePermissions(role.id).then(p=>setPerms(p||{role_id:role.id,id:'RP'+Math.random().toString(36).slice(2,8).toUpperCase()}));},[role.id]);
+  const toggle=(k)=>setPerms(p=>({...p,[k]:!p[k]}));
+  const save=async()=>{setSaving(true);await db.saveRolePermissions(perms);setSaving(false);setSaved(true);setTimeout(()=>setSaved(false),2500);};
+  if(!perms) return <Spinner/>;
+  const modsByCategory=CATEGORIES.map(cat=>({cat,mods:(MODULES||[]).filter(m=>m.category===cat)}));
+  const procsByModule=[...new Set((PROCESSES||[]).map(p=>p.module))].map(mod=>({mod,procs:(PROCESSES||[]).filter(p=>p.module===mod)}));
+  return(
+    <div className="ov" onClick={onClose}>
+      <div className="mdl wide" style={{maxWidth:680,maxHeight:'90vh'}} onClick={e=>e.stopPropagation()}>
+        <div className="mhd">
+          <div style={{display:'flex',alignItems:'center',gap:10}}>
+            <div style={{width:12,height:12,borderRadius:'50%',background:role.color,flexShrink:0}}/>
+            <span>Permissions — {role.name}</span>
+            {role.is_system&&<span className="bdg b-per" style={{fontSize:10}}>System Role</span>}
+          </div>
+          <button onClick={onClose}>✕</button>
+        </div>
+        <div className="mbd">
+          <div className="tbar" style={{marginBottom:20}}>
+            <button className={`tab ${tab==='modules'?'on':''}`} onClick={()=>setTab('modules')}>📱 Module Visibility</button>
+            <button className={`tab ${tab==='processes'?'on':''}`} onClick={()=>setTab('processes')}>⚙️ Process Permissions</button>
+          </div>
+          {saved&&<div className="ok-bar">✓ Permissions saved!</div>}
+          {tab==='modules'&&<div>
+            <p style={{fontSize:13,color:'var(--tx2)',marginBottom:16}}>Control which pages this role can see in the sidebar.</p>
+            {modsByCategory.map(({cat,mods})=>(
+              <div key={cat} style={{marginBottom:20}}>
+                <div className="nsec" style={{marginBottom:10}}>{cat}</div>
+                <div style={{background:'var(--sur2)',borderRadius:'var(--r)',padding:'4px 16px'}}>
+                  {mods.map(m=>(
+                    <label key={m.id} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 0',borderBottom:'1px solid var(--bd)',cursor:'pointer'}}>
+                      <input type="checkbox" checked={!!perms[m.id]} onChange={()=>toggle(m.id)} style={{width:16,height:16,accentColor:'var(--ac)',cursor:'pointer'}}/>
+                      <span style={{fontSize:16}}>{m.icon}</span>
+                      <span style={{fontSize:13,fontWeight:600}}>{m.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>}
+          {tab==='processes'&&<div>
+            <p style={{fontSize:13,color:'var(--tx2)',marginBottom:16}}>Control what actions this role can perform within each module.</p>
+            {procsByModule.map(({mod,procs})=>(
+              <div key={mod} style={{marginBottom:20}}>
+                <div className="nsec" style={{marginBottom:10}}>{mod}</div>
+                <div style={{background:'var(--sur2)',borderRadius:'var(--r)',padding:'4px 16px'}}>
+                  {procs.map(p=>(
+                    <label key={p.id} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 0',borderBottom:'1px solid var(--bd)',cursor:'pointer'}}>
+                      <input type="checkbox" checked={!!perms[p.id]} onChange={()=>toggle(p.id)} style={{width:16,height:16,accentColor:'var(--ac)',cursor:'pointer'}}/>
+                      <span style={{fontSize:13}}>{p.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>}
+          <div className="mft">
+            <button className="btn bgh" onClick={onClose}>Close</button>
+            <button className="btn bac" onClick={save} disabled={saving}>{saving?'Saving…':'💾 Save Permissions'}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── ROLES SETTINGS ────────────────────────────────────────────────
+function RolesSettings(){
+  const [roles,setRoles]=useState([]);const [loading,setLoading]=useState(true);
+  const [modal,setModal]=useState(null);const [form,setForm]=useState({});const [saving,setSaving]=useState(false);
+  const [selectedRole,setSelectedRole]=useState(null);
+  const s=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const COLORS=['#00d4aa','#58a6ff','#bc8cff','#e3b341','#f85149','#3fb950','#ff7b72','#8b949e'];
+  const reload=useCallback(async()=>{setLoading(true);setRoles(await db.getRoles());setLoading(false);},[]);
+  useEffect(()=>{reload();},[reload]);
+  const openNew=()=>{setForm({name:'',description:'',color:'#00d4aa',is_system:false});setModal('new');};
+  const save=async()=>{
+    if(!form.name?.trim()) return alert('Role name required.');
+    setSaving(true);
+    try{await db.saveRole({...form,id:form.id});await db.logActivity({action:'ROLE_CREATED',module:'Settings',description:`Role "${form.name}" ${form.id?'updated':'created'}`});}
+    catch(e){alert(e.message);}
+    await reload();setSaving(false);setModal(null);
+  };
+  const del=async r=>{
+    if(r.is_system) return alert('Cannot delete a system role.');
+    if(!window.confirm(`Delete role "${r.name}"?`)) return;
+    try{await db.deleteRole(r.id);await reload();}catch(e){alert(e.message);}
+  };
+  return(
+    <div>
+      {selectedRole&&<PermissionMatrix role={selectedRole} onClose={()=>setSelectedRole(null)}/>}
+      {modal&&<Modal title={modal==='new'?'New Role':'Edit Role'} onClose={()=>setModal(null)}>
+        <div className="fgrid">
+          <div className="fg s2"><label>Role Name *</label><input value={form.name||''} onChange={e=>s('name',e.target.value)} placeholder="e.g. Supervisor"/></div>
+          <div className="fg s2"><label>Description</label><input value={form.description||''} onChange={e=>s('description',e.target.value)} placeholder="What can this role do?"/></div>
+          <div className="fg s2"><label>Color</label>
+            <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:4}}>
+              {COLORS.map(c=><button key={c} onClick={()=>s('color',c)} style={{width:32,height:32,borderRadius:'50%',background:c,border:form.color===c?'3px solid var(--tx)':'3px solid transparent',cursor:'pointer'}}/>)}
+            </div>
+          </div>
+        </div>
+        <div className="mft"><button className="btn bgh" onClick={()=>setModal(null)}>Cancel</button><button className="btn bac" onClick={save} disabled={saving}>{saving?'Saving…':'Save Role'}</button></div>
+      </Modal>}
+      <div style={{display:'flex',justifyContent:'flex-end',marginBottom:16}}>
+        <button className="btn bac" onClick={openNew}>+ New Role</button>
+      </div>
+      {loading?<Spinner/>:<div style={{display:'flex',flexDirection:'column',gap:10}}>
+        {roles.map(r=>(
+          <div key={r.id} style={{background:'var(--sur2)',border:'1px solid var(--bd)',borderRadius:'var(--rl)',padding:'14px 18px',display:'flex',alignItems:'center',gap:14,flexWrap:'wrap'}}>
+            <div style={{width:14,height:14,borderRadius:'50%',background:r.color,flexShrink:0}}/>
+            <div style={{flex:1}}>
+              <div style={{display:'flex',alignItems:'center',gap:8}}>
+                <span style={{fontFamily:'Syne',fontWeight:700,fontSize:14}}>{r.name}</span>
+                {r.is_system&&<span className="bdg b-per" style={{fontSize:10}}>System</span>}
+              </div>
+              <div style={{fontSize:12,color:'var(--tx2)',marginTop:2}}>{r.description}</div>
+            </div>
+            <div style={{display:'flex',gap:8}}>
+              <button className="btn bgh" style={{fontSize:12,padding:'6px 14px'}} onClick={()=>setSelectedRole(r)}>🔑 Permissions</button>
+              {!r.is_system&&<><button className="ib" onClick={()=>{setForm({...r});setModal('edit');}}>✏️</button><button className="ib dl" onClick={()=>del(r)}>🗑</button></>}
+            </div>
+          </div>
+        ))}
+      </div>}
+    </div>
+  );
+}
+
 function AppSettings({currentUser}){
   const [tab,setTab]=useState('rates');
   const [rates,setR]=useState(null);const [users,setUsers]=useState([]);const [locs,setLocs]=useState([]);
@@ -1484,6 +1887,7 @@ function AppSettings({currentUser}){
         <button className={`tab ${tab==='rates'?'on':''}`} onClick={()=>setTab('rates')}>Rates</button>
         <button className={`tab ${tab==='locations'?'on':''}`} onClick={()=>setTab('locations')}>Locations</button>
         <button className={`tab ${tab==='users'?'on':''}`} onClick={()=>setTab('users')}>Users</button>
+        <button className={`tab ${tab==='roles'?'on':''}`} onClick={()=>setTab('roles')}>Roles</button>
         <button className={`tab ${tab==='qbo'?'on':''}`} onClick={()=>setTab('qbo')}>QuickBooks</button>
       </div>
       {tab==='rates'&&(rates?<div className="sbox">
@@ -1513,6 +1917,7 @@ function AppSettings({currentUser}){
           ))}</tbody>
         </table></div>
       </div>}
+      {tab==='roles'&&<div className="sbox"><p className="hint">Create and manage roles. Configure which modules each role can see and what actions they can perform. System roles cannot be deleted but their permissions can be edited.</p><RolesSettings/></div>}
       {tab==='qbo'&&<QBOSettings/>}
       {tab==='users'&&<div className="sbox">
         {(modal==='nu'||modal==='eu')&&<Modal title={modal==='nu'?'New User':'Edit User'} onClose={()=>setModal(null)}>
@@ -1520,17 +1925,26 @@ function AppSettings({currentUser}){
             <div className="fg"><label>Full Name *</label><input value={uForm.name||''} onChange={e=>su('name',e.target.value)}/></div>
             <div className="fg"><label>Username *</label><input value={uForm.username||''} onChange={e=>su('username',e.target.value)}/></div>
             <div className="fg"><label>Password {modal==='eu'?'(blank=keep)':'*'}</label><input type="password" value={uForm.password||''} onChange={e=>su('password',e.target.value)}/></div>
-            <div className="fg"><label>Role</label><select value={uForm.role||'personnel'} onChange={e=>su('role',e.target.value)}><option value="admin">Admin</option><option value="personnel">Personnel</option></select></div>
+            <div className="fg"><label>Role</label><select value={uForm.role_id||''} onChange={e=>su('role_id',e.target.value)}>
+            <option value="">— Select Role —</option>
+            {(typeof window!=='undefined'?[]:[])}
+            <option value="ROLE_ADMIN">Admin</option>
+            <option value="ROLE_SUPERVISOR">Supervisor</option>
+            <option value="ROLE_ACCOUNTING">Accounting</option>
+            <option value="ROLE_WAREHOUSE">Warehouse</option>
+            <option value="ROLE_PERSONNEL">Personnel</option>
+          </select></div>
             <div className="fg"><label>Status</label><select value={String(uForm.active??true)} onChange={e=>su('active',e.target.value==='true')}><option value="true">Active</option><option value="false">Inactive</option></select></div>
           </div>
           <div className="mft"><button className="btn bgh" onClick={()=>setModal(null)}>Cancel</button><button className="btn bac" onClick={saveU} disabled={saving}>{saving?'Saving…':'Save'}</button></div>
         </Modal>}
         <div style={{marginBottom:16}}><button className="btn bac" onClick={()=>{setUF({name:'',username:'',password:'',role:'personnel',active:true});setModal('nu');}}>+ Add User</button></div>
-        <div className="tw"><table><thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Status</th><th></th></tr></thead>
+        <div className="tw"><table><thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Status</th><th>Last Login</th><th></th></tr></thead>
           <tbody>{users.map(u=>(
             <tr key={u.id}><td><strong>{u.name}</strong></td><td style={{fontFamily:'JetBrains Mono',fontSize:12,color:'var(--tx2)'}}>{u.username}</td>
-            <td><span className={`bdg ${u.role==='admin'?'b-adm':'b-per'}`}>{u.role}</span></td>
+            <td><span className="bdg" style={{background:'rgba(88,166,255,.15)',color:'var(--bl)',border:'1px solid rgba(88,166,255,.2)',fontSize:11}}>{u.role_id?.replace('ROLE_','').charAt(0)+u.role_id?.replace('ROLE_','').slice(1).toLowerCase()||u.role}</span></td>
             <td><span className={`bdg ${u.active?'b-on':'b-off'}`}>{u.active?'Active':'Inactive'}</span></td>
+            <td style={{fontSize:11,color:'var(--tx2)'}}>{u.last_login?new Date(u.last_login).toLocaleDateString('en-PH',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}):'Never'}</td>
             <td><div style={{display:'flex',gap:4,justifyContent:'flex-end'}}><button className="ib" onClick={()=>{setUF({...u,password:''});setModal('eu');}}>✏️</button><button className="ib dl" onClick={()=>delU(u)}>🗑</button></div></td></tr>
           ))}</tbody>
         </table></div>
@@ -1553,6 +1967,7 @@ export default function App(){
     }catch{ localStorage.removeItem('fkc_user'); return null; }
   });
   const [page,setPage]=useState(()=>{ try{ return localStorage.getItem('fkc_page')||'dashboard'; }catch{ return 'dashboard'; }});
+  const [userPerms,setUserPerms]=useState({});
   const [sideOpen,setSide]=useState(false);
   const [clients,setClients]=useState([]);const [locations,setLocs]=useState([]);
   const [rk,setRk]=useState(0);
@@ -1564,29 +1979,29 @@ export default function App(){
     setClients(c);setLocs(l);
   },[]);
   useEffect(()=>{reload();},[reload]);
+  useEffect(()=>{
+    if(user?.role_id){
+      db.getUserPermissions(user.role_id).then(p=>setUserPerms(p||{}));
+    } else if(user?.role==='admin'){
+      // Legacy admin fallback - give full perms
+      db.getUserPermissions('ROLE_ADMIN').then(p=>setUserPerms(p||{}));
+    } else if(user){
+      db.getUserPermissions('ROLE_PERSONNEL').then(p=>setUserPerms(p||{}));
+    }
+  },[user]);
+  const can=(perm)=>!!(userPerms[perm]||(user?.role==='admin'));
+  const canSee=(mod)=>!!(userPerms[mod]||(user?.role==='admin'));
 
   const onSaved=useCallback(()=>{setRk(k=>k+1);reload();},[reload]);
-  const doLogin=async()=>{setLL(true);setLe('');const u=await db.login(lu,lp);setLL(false);if(u){setUser(u);setPage('dashboard');try{localStorage.setItem('fkc_user',JSON.stringify(u));localStorage.setItem('fkc_page','dashboard');}catch{}await reload();}else setLe('Invalid username or password.');};
+  const doLogin=async()=>{setLL(true);setLe('');const u=await db.login(lu,lp);setLL(false);if(u){setUser(u);setPage('dashboard');try{localStorage.setItem('fkc_user',JSON.stringify(u));localStorage.setItem('fkc_page','dashboard');}catch{}db.updateLastLogin(u.id).catch(()=>{});await reload();}else setLe('Invalid username or password.');};
   const doLogout=()=>{setUser(null);setLu('');setLp('');setLe('');try{localStorage.removeItem('fkc_user');localStorage.removeItem('fkc_page');}catch{}};
 
 
-  const ALL_NAV=[
-    {section:'Operations'},
-    {id:'dashboard',   label:'Dashboard',    icon:'📊',roles:['admin','personnel']},
-    {id:'stock-in',    label:'Stock In',      icon:'📥',roles:['admin','personnel']},
-    {id:'stock-out',   label:'Stock Out',     icon:'📤',roles:['admin','personnel']},
-    {id:'transactions',label:'Transactions',  icon:'📋',roles:['admin','personnel']},
-    {section:'Management'},
-    {id:'contracts',   label:'Dry Contracts', icon:'📋',roles:['admin']},
-    {id:'items',       label:'Item Database', icon:'📦',roles:['admin']},
-    {id:'clients',     label:'Clients',       icon:'🏢',roles:['admin']},
-    {id:'billing',     label:'Billing',       icon:'📄',roles:['admin']},
-    {section:'Maintenance'},
-    {id:'spareparts',  label:'Spare Parts',   icon:'🔧',roles:['admin','personnel']},
-    {section:'System'},
-    {id:'settings',    label:'Settings',      icon:'⚙️',roles:['admin']},
-  ];
-  const nav=user?ALL_NAV.filter(n=>n.section||(n.roles&&n.roles.includes(user.role))):[];
+  // Dynamic nav from permissions
+  const nav=user?CATEGORIES.map(cat=>({
+    section:cat,
+    items:(MODULES||[]).filter(m=>m.category===cat&&canSee(m.id))
+  })).filter(g=>g.items.length>0):[];
   const goTo=id=>{setPage(id);setSide(false);try{localStorage.setItem('fkc_page',id);}catch{}if(['clients','items','settings','contracts'].includes(id)) reload();};
 
   if(!user) return(
@@ -1611,15 +2026,16 @@ export default function App(){
   const renderPage=()=>{
     switch(page){
       case 'dashboard':    return <Dashboard    clients={clients} locations={locations} refresh={rk}/>;
-      case 'stock-in':     return <StockForm    type="IN"  user={user} clients={clients} locations={locations} onSaved={onSaved}/>;
-      case 'stock-out':    return <StockForm    type="OUT" user={user} clients={clients} locations={locations} onSaved={onSaved}/>;
-      case 'transactions': return <TransactionLog clients={clients} locations={locations} refresh={rk}/>;
-      case 'contracts':    return <Contracts    clients={clients} locations={locations}/>;
-      case 'items':        return <ItemDatabase clients={clients}/>;
-      case 'clients':      return <Clients/>;
-      case 'billing':      return <Billing      clients={clients}/>;
-      case 'spareparts':   return <SpareParts   user={user}/>;
-      case 'settings':     return <AppSettings  currentUser={user}/>;
+      case 'stock-in':     return <StockForm    type="IN"  user={user} clients={clients} locations={locations} onSaved={onSaved} can={can}/>;
+      case 'stock-out':    return <StockForm    type="OUT" user={user} clients={clients} locations={locations} onSaved={onSaved} can={can}/>;
+      case 'transactions': return <TransactionLog clients={clients} locations={locations} refresh={rk} user={user} can={can}/>;
+      case 'contracts':    return <Contracts    clients={clients} locations={locations} can={can}/>;
+      case 'items':        return <ItemDatabase clients={clients} can={can}/>;
+      case 'clients':      return <Clients can={can}/>;
+      case 'billing':      return <Billing      clients={clients} can={can}/>;
+      case 'spareparts':   return <SpareParts   user={user} can={can}/>;
+      case 'settings':     return <AppSettings  currentUser={user} can={can}/>;
+      case 'activity':     return <ActivityLog  user={user}/>;
       default:             return <Dashboard    clients={clients} locations={locations} refresh={rk}/>;
     }
   };
@@ -1632,14 +2048,24 @@ export default function App(){
           <div className="sbrand-icon"><img src={FKC_LOGO} alt="FKC" style={{width:28,height:28,objectFit:'contain'}}/></div>
           <span className="sbrand-name">FKC Logistics</span>
         </div>
-        <nav className="snav">{nav.map((n,i)=>n.section?<div key={i} className="nsec">{n.section}</div>:<button key={n.id} className={`nb ${page===n.id?'on':''}`} onClick={()=>goTo(n.id)}><span style={{fontSize:15}}>{n.icon}</span>{n.label}</button>)}</nav>
+        <nav className="snav">{nav.map((g,i)=>(
+          <div key={i}>
+            <div className="nsec">{g.section}</div>
+            {g.items.map(m=><button key={m.id} className={`nb ${page===m.path?'on':''}`} onClick={()=>goTo(m.path)}><span style={{fontSize:15}}>{m.icon}</span>{m.label}</button>)}
+          </div>
+        ))}</nav>
         <div className="sfoot">
-          <div className="urow"><div className="uav">{user.name[0]}</div><div><div className="uname">{user.name}</div><div className="urole">{user.role}</div></div></div>
+          <div className="urow">
+            <div className="uav" style={{background:user.avatar_color?user.avatar_color+'22':'var(--acd)',border:`1px solid ${user.avatar_color||'rgba(0,212,170,.3)'}`,color:user.avatar_color||'var(--ac)'}}>{user.name[0]}</div>
+            <div><div className="uname">{user.name}</div><div className="urole">{user.role_id?.replace('ROLE_','').toLowerCase()||user.role}</div></div>
+          </div>
+          {(user.role==='admin'||user.role_id==='ROLE_ADMIN'||user.role_id==='ROLE_SUPERVISOR')&&
+            <button className="nb" style={{width:'100%',marginBottom:6}} onClick={()=>goTo('activity')}>📜 Activity Log</button>}
           <button className="lobtn" onClick={doLogout}>Sign Out</button>
         </div>
       </aside>
       <main className="main">
-        <div className="topbar"><button className="hbg" onClick={()=>setSide(s=>!s)}>☰</button><span className="ttl">{nav.find(n=>n.id===page)?.label}</span></div>
+        <div className="topbar"><button className="hbg" onClick={()=>setSide(s=>!s)}>☰</button><span className="ttl">{(MODULES||[]).find(m=>m.path===page)?.label||page}</span></div>
         {renderPage()}
       </main>
     </div>
