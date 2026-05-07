@@ -96,6 +96,19 @@ export async function saveTransaction(tx) {
   return data;
 }
 
+export async function updateTransaction(tx) {
+  const { error } = await supabase
+    .from('transactions').update({
+      date: tx.date, kg: tx.kg, ref_no: tx.ref_no, notes: tx.notes
+    }).eq('id', tx.id);
+  if (error) throw error;
+}
+
+export async function deleteTransaction(id) {
+  const { error } = await supabase.from('transactions').delete().eq('id', id);
+  if (error) throw error;
+}
+
 // ── RATES ─────────────────────────────────────────────────────────
 export async function getRates() {
   const { data } = await supabase.from('rates').select('*').single();
@@ -473,11 +486,16 @@ export async function computeBilling(clientId, dateFrom, dateTo) {
   let totalStorage = 0;
 
   // Enumerate each day in the billing period
-  const start = new Date(dateFrom + 'T00:00:00');
-  const end   = new Date(dateTo   + 'T00:00:00');
+  // Use string-based date iteration to avoid timezone issues
+  const addDays = (dateStr, n) => {
+    const d = new Date(dateStr + 'T12:00:00Z'); // noon UTC avoids DST issues
+    d.setUTCDate(d.getUTCDate() + n);
+    return d.toISOString().slice(0, 10);
+  };
 
-  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-    const dateStr = d.toISOString().slice(0, 10);
+  let currentDate = dateFrom;
+  while (currentDate <= dateTo) {
+    const dateStr = currentDate;
     const dayItems = [];
     let dayTotalKg = 0;
 
@@ -514,6 +532,9 @@ export async function computeBilling(clientId, dateFrom, dateTo) {
       totalKg: dayTotalKg,
       charge: dayCharge,
     });
+
+    // Move to next day using string arithmetic (timezone-safe)
+    currentDate = addDays(currentDate, 1);
   }
 
   // Container rental fees for the billing period

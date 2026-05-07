@@ -253,11 +253,11 @@ function Modal({title,onClose,children,wide=false}){
   );
 }
 
-function TxTable({txs,clientMap,locationMap}){
-  if(!txs.length) return <div className="tw"><table><tbody><tr className="erow"><td colSpan={8}>No transactions found.</td></tr></tbody></table></div>;
+function TxTable({txs,clientMap,locationMap,onEdit,onDelete}){
+  if(!txs.length) return <div className="tw"><table><tbody><tr className="erow"><td colSpan={9}>No transactions found.</td></tr></tbody></table></div>;
   return(
     <div className="tw"><table>
-      <thead><tr><th>Date</th><th>Client</th><th>Item</th><th>Location</th><th>Type</th><th>Weight</th><th>Ref #</th><th>By</th></tr></thead>
+      <thead><tr><th>Date</th><th>Client</th><th>Item</th><th>Location</th><th>Type</th><th>Weight</th><th>Ref #</th><th>By</th><th></th></tr></thead>
       <tbody>{txs.map(t=>(
         <tr key={t.id}>
           <td style={{fontFamily:'JetBrains Mono',fontSize:12,color:'var(--tx2)'}}>{fmtD(t.date)}</td>
@@ -268,6 +268,12 @@ function TxTable({txs,clientMap,locationMap}){
           <td style={{fontFamily:'JetBrains Mono',fontSize:12}}>{fmtKg(t.kg)}</td>
           <td style={{color:'var(--tx2)'}}>{t.ref_no||'—'}</td>
           <td style={{color:'var(--tx2)',fontSize:12}}>{t.encoded_by}</td>
+          <td>
+            <div style={{display:'flex',gap:4,justifyContent:'flex-end'}}>
+              {onEdit&&<button className="ib" onClick={()=>onEdit(t)} title="Edit">✏️</button>}
+              {onDelete&&<button className="ib dl" onClick={()=>onDelete(t)} title="Delete">🗑</button>}
+            </div>
+          </td>
         </tr>
       ))}</tbody>
     </table></div>
@@ -510,16 +516,52 @@ function StockForm({type,user,clients,locations,onSaved}){
 }
 
 // ----------------------------------------
-function TransactionLog({clients,locations,refresh}){
+function TransactionLog({clients,locations,refresh,user,can}){
   const [filter,setFilter]=useState({client_id:'',type:'',location_id:'',from:'',to:''});
   const [txs,setTxs]=useState([]);const [loading,setLoading]=useState(true);
+  const [editTx,setEditTx]=useState(null);const [saving,setSaving]=useState(false);
   const clientMap=Object.fromEntries(clients.map(c=>[c.id,c.name]));
   const locationMap=Object.fromEntries(locations.map(l=>[l.id,l.name]));
   const load=useCallback(async()=>{setLoading(true);setTxs(await db.getTransactions(filter));setLoading(false);},[filter]);
   useEffect(()=>{load();},[load,refresh]);
   const setF=(k,v)=>setFilter(f=>({...f,[k]:v}));
+
+  const handleDelete=async(t)=>{
+    if(!window.confirm(`Delete ${t.type==='IN'?'Stock In':'Stock Out'} of ${fmtKg(t.kg)} ${t.item_name} on ${fmtD(t.date)}?`)) return;
+    await db.deleteTransaction(t.id);
+    await db.logActivity({userId:user?.id,userName:user?.name,roleName:user?.role,action:'TX_DELETED',module:'Transactions',description:`Deleted ${t.type} transaction: ${fmtKg(t.kg)} ${t.item_name}`,recordId:t.id});
+    load();
+  };
+
+  const handleSaveEdit=async()=>{
+    if(!editTx.date||!editTx.kg||parseFloat(editTx.kg)<=0) return alert('Date and weight are required.');
+    setSaving(true);
+    await db.updateTransaction({...editTx,kg:parseFloat(editTx.kg)});
+    await db.logActivity({userId:user?.id,userName:user?.name,roleName:user?.role,action:'TX_EDITED',module:'Transactions',description:`Edited ${editTx.type} transaction: ${fmtKg(parseFloat(editTx.kg))} ${editTx.item_name}`,recordId:editTx.id});
+    setSaving(false);setEditTx(null);load();
+  };
+
+  const canEdit = can?can('perm_stock_in_delete'):user?.role==='admin';
+  const canDel  = can?can('perm_stock_out_delete')||can('perm_stock_in_delete'):user?.role==='admin';
+
   return(
     <div className="con">
+      {editTx&&<Modal title="Edit Transaction" onClose={()=>setEditTx(null)}>
+        <div className="info-box" style={{marginBottom:16}}>
+          <strong>{editTx.type==='IN'?'▼ Stock In':'▲ Stock Out'}</strong> — {editTx.item_name}<br/>
+          <span style={{fontSize:12,color:'var(--tx2)'}}>Only date, weight, reference number and notes can be edited.</span>
+        </div>
+        <div className="fgrid">
+          <div className="fg"><label>Date *</label><input type="date" value={editTx.date} onChange={e=>setEditTx(t=>({...t,date:e.target.value}))}/></div>
+          <div className="fg"><label>Weight (kg) *</label><input type="number" step="0.01" min="0.01" value={editTx.kg} onChange={e=>setEditTx(t=>({...t,kg:e.target.value}))}/></div>
+          <div className="fg"><label>Reference No.</label><input value={editTx.ref_no||''} onChange={e=>setEditTx(t=>({...t,ref_no:e.target.value}))}/></div>
+          <div className="fg"><label>Notes</label><input value={editTx.notes||''} onChange={e=>setEditTx(t=>({...t,notes:e.target.value}))}/></div>
+        </div>
+        <div className="mft">
+          <button className="btn bgh" onClick={()=>setEditTx(null)}>Cancel</button>
+          <button className="btn bac" onClick={handleSaveEdit} disabled={saving}>{saving?'Saving…':'Save Changes'}</button>
+        </div>
+      </Modal>}
       <div className="ph"><div className="phi bl">📋</div><h2>Transaction Log</h2><button className="btn bgh mla" onClick={load}>↻ Refresh</button></div>
       <div className="fbar" style={{marginBottom:16}}>
         <select value={filter.client_id} onChange={e=>setF('client_id',e.target.value)}><option value="">All Clients</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
@@ -529,7 +571,9 @@ function TransactionLog({clients,locations,refresh}){
         <input type="date" value={filter.to} onChange={e=>setF('to',e.target.value)}/>
         <button className="btn bgh" onClick={()=>setFilter({client_id:'',type:'',location_id:'',from:'',to:''})}>Clear</button>
       </div>
-      {loading?<Spinner/>:<TxTable txs={txs} clientMap={clientMap} locationMap={locationMap}/>}
+      {loading?<Spinner/>:<TxTable txs={txs} clientMap={clientMap} locationMap={locationMap}
+        onEdit={canEdit?setEditTx:null}
+        onDelete={canDel?handleDelete:null}/>}
     </div>
   );
 }
