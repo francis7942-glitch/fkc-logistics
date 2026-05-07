@@ -217,6 +217,30 @@ export async function deletePR(id) {
 }
 
 // ── INVENTORY (computed) ──────────────────────────────────────────
+// ── STOCK VALIDATION ─────────────────────────────────────────────
+export async function getItemStock(itemId, locationId) {
+  // Get current stock level for an item at a location
+  const { data: txs } = await supabase.from('transactions')
+    .select('type,kg').eq('item_id', itemId).eq('location_id', locationId);
+  if (!txs) return 0;
+  const stock = txs.reduce((s,t) => s + (t.type==='IN' ? t.kg : -t.kg), 0);
+  return Math.max(0, stock);
+}
+
+export async function validateStockOut(itemId, locationId, kg) {
+  const currentStock = await getItemStock(itemId, locationId);
+  if (kg > currentStock) {
+    return {
+      valid: false,
+      currentStock,
+      requested: kg,
+      shortage: kg - currentStock,
+      message: `Insufficient stock. Available: ${currentStock.toLocaleString('en-PH', {minimumFractionDigits:2})} kg, Requested: ${kg.toLocaleString('en-PH', {minimumFractionDigits:2})} kg, Shortage: ${(kg-currentStock).toLocaleString('en-PH', {minimumFractionDigits:2})} kg`
+    };
+  }
+  return { valid: true, currentStock };
+}
+
 export async function getInventory() {
   const { data: txs } = await supabase.from('transactions').select('*');
   const { data: items } = await supabase.from('items').select('*');
@@ -236,8 +260,10 @@ export async function getInventory() {
     }
     map[key].kg += tx.type === 'IN' ? tx.kg : -tx.kg;
   }
-  return Object.values(map).filter(r => r.kg > 0)
-    .sort((a,b) => a.client_name.localeCompare(b.client_name) || a.item_name.localeCompare(b.item_name));
+  return Object.values(map)
+    .filter(r => r.kg !== 0) // show both positive AND negative (negative = data issue)
+    .sort((a,b) => a.kg - b.kg || a.client_name.localeCompare(b.client_name) || a.item_name.localeCompare(b.item_name));
+    // Negative items sort to top so they're immediately visible
 }
 
 // ── MONTHLY REVENUE ───────────────────────────────────────────────
@@ -504,6 +530,7 @@ export async function computeBilling(clientId, dateFrom, dateTo) {
     const dayItems = [];
     let dayTotalKg = 0;
 
+    const negativeItems = []; // track items with negative stock
     for (const [itemId, itemData] of Object.entries(itemMap)) {
       // Sum all transactions for this item UP TO AND INCLUDING this day
       let kgOnHand = 0;
@@ -512,12 +539,16 @@ export async function computeBilling(clientId, dateFrom, dateTo) {
           kgOnHand += tx.type === 'IN' ? tx.kg : -tx.kg;
         }
       }
-      kgOnHand = Math.max(0, kgOnHand); // can't be negative
-      if (kgOnHand > 0) {
+      if (kgOnHand < 0) {
+        // Flag negative stock — data integrity issue
+        negativeItems.push({ item_name: itemData.name, kg: kgOnHand });
+      } else if (kgOnHand > 0) {
         dayItems.push({ item_name: itemData.name, kg: kgOnHand });
-        dayTotalKg += kgOnHand;
       }
+      // Include in total (negative correctly reduces the total)
+      dayTotalKg += kgOnHand;
     }
+    dayTotalKg = Math.max(0, dayTotalKg);
 
     // Compute charge per item type using correct rate
     let dayCharge = 0;
@@ -534,6 +565,7 @@ export async function computeBilling(clientId, dateFrom, dateTo) {
     dailyRows.push({
       date: dateStr,
       items: dayItems,
+      negativeItems, // items with negative stock (data integrity warnings)
       totalKg: dayTotalKg,
       charge: dayCharge,
     });

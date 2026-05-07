@@ -398,6 +398,18 @@ function InventoryPanel({inventory,clients,locations}){
   const chips=[{k:'all',l:'All Types'},{k:'frozen',l:'🧊 Frozen'},{k:'chilled',l:'🌡️ Chilled'},{k:'dry',l:'📦 Dry'}];
   return(
     <div className="inv-wrap">
+      {inventory.filter(r=>r.kg<0).length>0&&(
+        <div style={{background:'var(--rdd)',borderBottom:'1px solid rgba(248,81,73,.25)',padding:'12px 18px',fontSize:13,color:'var(--rd)'}}>
+          ⚠ <strong>{inventory.filter(r=>r.kg<0).length}</strong> item{inventory.filter(r=>r.kg<0).length!==1?'s':''} with negative inventory — Stock Out exceeded Stock In:
+          <div style={{marginTop:6,fontSize:12,display:'flex',flexWrap:'wrap',gap:8}}>
+            {inventory.filter(r=>r.kg<0).map((r,i)=>(
+              <span key={i} style={{background:'rgba(248,81,73,.15)',borderRadius:4,padding:'2px 8px'}}>
+                {r.item_name} ({r.client_name}): <strong>{fmtKg(r.kg)}</strong>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="inv-hd">
         <div style={{display:'flex',alignItems:'center',gap:10}}><span style={{fontSize:18}}>📦</span><span className="inv-title">Live Inventory</span><span className="inv-count">{filtered.length} lines · {fmtKg(total)}</span></div>
         <button className="btn bgh" style={{fontSize:12,padding:'6px 12px'}} onClick={()=>{setStF('all');setClF('');setLoF('');}}>Clear Filters</button>
@@ -420,12 +432,12 @@ function InventoryPanel({inventory,clients,locations}){
         <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
           <thead><tr>{['Item','Client','Location','Type','On Hand'].map((h,i)=><th key={h} style={{background:'var(--sur2)',padding:'10px 14px',textAlign:i===4?'right':'left',fontSize:11,fontWeight:700,color:'var(--tx2)',letterSpacing:'.06em',textTransform:'uppercase',borderBottom:'1px solid var(--bd)',whiteSpace:'nowrap'}}>{h}</th>)}</tr></thead>
           <tbody>{filtered.map((r,i)=>(
-            <tr key={i} className={`row-${r.storage_type==='frozen'?'frz':r.storage_type==='chilled'?'chl':'dry'}`} style={{borderBottom:'1px solid var(--bd)'}} onMouseEnter={e=>e.currentTarget.style.background='var(--sur2)'} onMouseLeave={e=>e.currentTarget.style.background=''}>
+            <tr key={i} className={`row-${r.storage_type==='frozen'?'frz':r.storage_type==='chilled'?'chl':'dry'}`} style={{borderBottom:'1px solid var(--bd)',background:r.kg<0?'rgba(248,81,73,.05)':''}} onMouseEnter={e=>e.currentTarget.style.background=r.kg<0?'rgba(248,81,73,.1)':'var(--sur2)'} onMouseLeave={e=>e.currentTarget.style.background=r.kg<0?'rgba(248,81,73,.05)':''}>
               <td style={{padding:'11px 14px'}}><div style={{fontWeight:700}}>{r.item_name}</div>{r.item_code&&<div style={{fontFamily:'JetBrains Mono',fontSize:11,color:'var(--tx2)'}}>{r.item_code}</div>}</td>
               <td style={{padding:'11px 14px',color:'var(--tx2)'}}>{r.client_name}</td>
               <td style={{padding:'11px 14px'}}><span className="bdg b-loc">{r.location_name}</span></td>
               <td style={{padding:'11px 14px'}}><span className={`bdg ${sbadge(r.storage_type)}`}>{sico(r.storage_type)} {r.storage_type}</span></td>
-              <td style={{padding:'11px 14px',textAlign:'right',fontFamily:'JetBrains Mono',fontSize:13,fontWeight:600,color:'var(--ac)'}}>{fmtKg(r.kg)}</td>
+              <td style={{padding:'11px 14px',textAlign:'right',fontFamily:'JetBrains Mono',fontSize:13,fontWeight:600,color:r.kg<0?'var(--rd)':'var(--ac)'}}>{r.kg<0?<span title="Negative inventory - Stock Out exceeded Stock In">⚠ {fmtKg(r.kg)}</span>:fmtKg(r.kg)}</td>
             </tr>
           ))}</tbody>
           <tfoot><tr style={{background:'var(--sur2)',borderTop:'2px solid var(--bd)'}}>
@@ -481,6 +493,14 @@ function StockForm({type,user,clients,locations,onSaved}){
     if(!form.locationId) return setErr('Please select a storage location.');
     if(!form.kg||isNaN(parseFloat(form.kg))||parseFloat(form.kg)<=0) return setErr('Please enter a valid weight.');
     setErr('');setSaving(true);
+    // Validate stock availability for Stock Out
+    if(type==='OUT'){
+      const validation = await db.validateStockOut(form.itemId, form.locationId, parseFloat(form.kg));
+      if(!validation.valid){
+        setSaving(false);
+        return setErr(`⚠ Insufficient stock. Available: ${fmtKg(validation.currentStock)} | Requested: ${fmtKg(validation.requested)} | Shortage: ${fmtKg(validation.shortage)}`);
+      }
+    }
     try{
       const tx=await db.saveTransaction({id:'TX'+uid(),type,client_id:form.clientId,item_id:form.itemId,item_name:selItem.name,location_id:form.locationId,kg:parseFloat(form.kg),ref_no:form.refNo,date:form.date,notes:form.notes,encoded_by:user.name,created_at:new Date().toISOString()});
       setSaved({...tx,clientName:clients.find(c=>c.id===tx.client_id)?.name,locationName:selLoc?.name});
@@ -1063,12 +1083,22 @@ function Billing({clients}){
                 <div style={{display:'grid',gridTemplateColumns:'130px 1fr 120px 120px',background:'var(--sur3)',borderBottom:'1px solid var(--bd)'}}>
                   {['Date','kg on Hand','Rate /kg/day','Daily Charge'].map(h=><div key={h} style={{padding:'6px 10px',fontSize:10,fontWeight:700,color:'var(--tx2)',letterSpacing:'.05em',textTransform:'uppercase'}}>{h}</div>)}
                 </div>
-                {result.dailyRows.filter(r=>r.totalKg>0).map((row,i)=>(
-                  <div key={i} style={{display:'grid',gridTemplateColumns:'130px 1fr 120px 120px',borderBottom:'1px solid var(--bd)',background:i%2===0?'':'rgba(255,255,255,.02)'}}>
-                    <div style={{padding:'7px 10px',fontFamily:'JetBrains Mono',fontSize:11,color:'var(--tx2)'}}>{fmtD(row.date)}</div>
-                    <div style={{padding:'7px 10px',fontFamily:'JetBrains Mono',fontWeight:600}}>{fmtKg(row.totalKg)}</div>
-                    <div style={{padding:'7px 10px',fontFamily:'JetBrains Mono',color:'var(--tx2)'}}>{fmtM(result.effectiveRates?.frozen?.storage||result.rates.storage_per_kg_per_day)}</div>
-                    <div style={{padding:'7px 10px',fontFamily:'JetBrains Mono',color:'var(--ac)',fontWeight:600}}>{fmtM(row.charge)}</div>
+                {result.dailyRows.filter(r=>r.totalKg>0||r.negativeItems?.length>0).map((row,i)=>(
+                  <div key={i}>
+                    <div style={{display:'grid',gridTemplateColumns:'130px 1fr 120px 120px',borderBottom:'1px solid var(--bd)',background:i%2===0?'':'rgba(255,255,255,.02)'}}>
+                      <div style={{padding:'7px 10px',fontFamily:'JetBrains Mono',fontSize:11,color:'var(--tx2)'}}>{fmtD(row.date)}</div>
+                      <div style={{padding:'7px 10px',fontFamily:'JetBrains Mono',fontWeight:600}}>{fmtKg(row.totalKg)}</div>
+                      <div style={{padding:'7px 10px',fontFamily:'JetBrains Mono',color:'var(--tx2)'}}>{fmtM(result.effectiveRates?.frozen?.storage||result.rates.storage_per_kg_per_day)}</div>
+                      <div style={{padding:'7px 10px',fontFamily:'JetBrains Mono',color:'var(--ac)',fontWeight:600}}>{fmtM(row.charge)}</div>
+                    </div>
+                    {row.negativeItems?.length>0&&row.negativeItems.map((ni,j)=>(
+                      <div key={j} style={{display:'grid',gridTemplateColumns:'130px 1fr',background:'var(--rdd)',borderBottom:'1px solid rgba(248,81,73,.2)',padding:'5px 10px'}}>
+                        <div style={{fontFamily:'JetBrains Mono',fontSize:11,color:'var(--rd)'}}>⚠ {fmtD(row.date)}</div>
+                        <div style={{fontSize:11,color:'var(--rd)'}}>
+                          <strong>{ni.item_name}</strong> went negative: {fmtKg(ni.kg)} — Stock Out exceeded available stock. Please check transaction records.
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 ))}
                 <div style={{display:'grid',gridTemplateColumns:'100px 1fr 90px 90px 110px',background:'rgba(0,212,170,.06)',borderTop:'2px solid rgba(0,212,170,.2)'}}>
